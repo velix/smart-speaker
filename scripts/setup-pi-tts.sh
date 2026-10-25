@@ -6,8 +6,9 @@ set -euo pipefail
 
 PIPER_DIR=/opt/piper
 VOICE_DIR=$PIPER_DIR/voices
-VOICE=en_US-lessac-medium
-VOICE_PATH=en/en_US/lessac/medium/en_US-lessac-medium
+# lessac-low: faster than medium on the Pi 3B (and 16 kHz = no resampling)
+VOICE=en_US-lessac-low
+VOICE_PATH=en/en_US/lessac/low/en_US-lessac-low
 
 sudo mkdir -p "$PIPER_DIR" "$VOICE_DIR"
 sudo chown -R "$USER" "$PIPER_DIR"

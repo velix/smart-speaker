@@ -31,7 +31,7 @@ tts:
   engine: "piper"          # "piper" (on-Pi, local) or "openwebui" (server-side)
   piper:
     bin: "/opt/piper/piper/piper"
-    voice: "/opt/piper/voices/en_US-lessac-medium.onnx"
+    voice: "/opt/piper/voices/en_US-lessac-low.onnx"
 
 history:
   max_turns: 10
