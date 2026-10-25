@@ -6,6 +6,9 @@ description: Smart speaker project — ReSpeaker 2-Mic HAT (KS0314, WM8960) on R
 # Smart Speaker project
 
 ## Actual build status (as of 2026-10-25)
+- SSH access established from the Mac: host alias `pi-speaker` (velix@192.168.2.145, key `~/.ssh/pi-smart-speaker`, ed25519, password auth also still enabled). Pi hostname: `rpi-mic`. Raspbian 11 bullseye, 32-bit armv7, kernel 6.1.21-v7+, Python 3.9.2 system. 921 MB RAM, 26 GB free disk. `/opt` empty; `uv` and `ffmpeg` not yet installed; git present.
+- ALSA on rpi-mic: card 0 = bcm2835 Headphones, card 1 = vc4-hdmi, **card 2 = seeed-2mic-voicecard (WM8960)** — config.yaml `audio.card` set to 2 accordingly.
+- Power finding update (2026-10-25, SSH survey): `vcgencmd get_throttled` = 0xd0008 at idle — bit 3 (currently undervolted) is set NOW, not only at boot. Undervoltage is active during normal operation; the power fix is a blocker for stable daemon operation.
 - Board: **Raspberry Pi 3 Model B** (NOT the Pi Zero WH from the design docs).
 - HAT: **Keyestudio/Seeed ReSpeaker 2-Mic HAT (KS0314)** mounted on the 40-pin header. Hardware details, ALSA setup, and a walkthrough of every example script are in [respeaker-hat-reference.md](respeaker-hat-reference.md).
 - Drivers: `seeed-voicecard` installed and validated — mic, codec, LEDs all work.

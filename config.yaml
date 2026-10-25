@@ -5,7 +5,7 @@ openwebui:
   language: "en"
 
 audio:
-  card: 1            # arecord -l → 'card N: seeed2micvoicec'
+  card: 2            # arecord -l → 'card 2: seeed2micvoicec' on rpi-mic
   rate: 16000
   channels: 2        # WM8960 captures stereo; we slice channel 0
   playback_volume: 0.9
