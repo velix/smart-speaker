@@ -11,6 +11,9 @@ ExecStart=/opt/voice-assistant/.venv/bin/voice-assistant
 Restart=on-failure
 RestartSec=5
 Environment=PYTHONUNBUFFERED=1
+# Secrets live outside the repo; optional env file (create on the Pi):
+#   /etc/voice-assistant.env with OPENWEBUI_BASE_URL=... and OPENWEBUI_API_KEY=...
+EnvironmentFile=-/etc/voice-assistant.env
 
 [Install]
 WantedBy=multi-user.target

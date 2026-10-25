@@ -63,6 +63,28 @@ After pushing from your dev machine, update the Pi with:
 ./scripts/pi-update.sh        # git pull --ff-only + uv sync (+ service restart if running)
 ```
 
+### Secrets (this repo is public — no secrets in it)
+
+`config.yaml` ships with empty `openwebui.base_url` / `api_key`. Provide the
+real values on the Pi in **either** (or both) of:
+
+1. **`/opt/voice-assistant/config.local.yaml`** (gitignored, overlays config.yaml):
+
+   ```yaml
+   openwebui:
+     base_url: "http://192.168.2.x:3000"
+     api_key: "sk-..."
+   ```
+
+2. **`/etc/voice-assistant.env`** (loaded by the systemd unit):
+
+   ```
+   OPENWEBUI_BASE_URL=http://192.168.2.x:3000
+   OPENWEBUI_API_KEY=sk-...
+   ```
+
+Env vars win over the local file; the local file wins over config.yaml.
+
 > Note: `uv` installs its own Python 3.11 on the Pi (system Python 3.9 is too
 > old). `openwakeword` is NOT installed on the Pi — onnxruntime has no 32-bit
 > armv7 wheels; the daemon runs button-triggered until a Pi-compatible

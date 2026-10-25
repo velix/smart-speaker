@@ -6,6 +6,7 @@ full pipeline (phase 4). Wake word activates via config.
 """
 import argparse
 import logging
+import os
 import threading
 import time
 from pathlib import Path
@@ -116,6 +117,33 @@ class VoiceAssistant:
             self.turn()
 
 
+def _deep_merge(base: dict, override: dict):
+    for k, v in override.items():
+        if isinstance(v, dict) and isinstance(base.get(k), dict):
+            _deep_merge(base[k], v)
+        else:
+            base[k] = v
+
+
+def load_config(path: str) -> dict:
+    """Load config.yaml, then overlay secrets without touching the repo:
+    1. optional gitignored config.local.yaml next to the config file
+    2. OPENWEBUI_BASE_URL / OPENWEBUI_API_KEY env vars (systemd EnvironmentFile)
+    """
+    with open(path) as f:
+        cfg = yaml.safe_load(f)
+    local = Path(path).with_name("config.local.yaml")
+    if local.exists():
+        with open(local) as f:
+            _deep_merge(cfg, yaml.safe_load(f) or {})
+        log.info("applied config override %s", local)
+    if os.environ.get("OPENWEBUI_BASE_URL"):
+        cfg["openwebui"]["base_url"] = os.environ["OPENWEBUI_BASE_URL"]
+    if os.environ.get("OPENWEBUI_API_KEY"):
+        cfg["openwebui"]["api_key"] = os.environ["OPENWEBUI_API_KEY"]
+    return cfg
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--phase", type=int, default=4,
@@ -126,8 +154,7 @@ def main():
 
     logging.basicConfig(level=logging.INFO,
                         format="%(asctime)s %(name)s %(levelname)s %(message)s")
-    with open(args.config) as f:
-        cfg = yaml.safe_load(f)
+    cfg = load_config(args.config)
 
     assistant = VoiceAssistant(cfg, full_pipeline=(args.phase >= 4))
     try:

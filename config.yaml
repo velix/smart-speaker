@@ -1,6 +1,9 @@
 openwebui:
-  base_url: "http://192.168.1.50:3000"   # your OpenWebUI instance
-  api_key: "REPLACE_WITH_OPENWEBUI_API_KEY"
+  # Secrets live OUTSIDE this repo (it is public). Set these in an untracked
+  # config.local.yaml next to this file, or via OPENWEBUI_BASE_URL /
+  # OPENWEBUI_API_KEY environment variables (see README).
+  base_url: ""
+  api_key: ""
   model: "llama3.2:3b"
   language: "en"
 
