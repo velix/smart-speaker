@@ -4,7 +4,7 @@ openwebui:
   # OPENWEBUI_API_KEY environment variables (see README).
   base_url: ""
   api_key: ""
-  model: "llama3.2:3b"
+  model: "ministral-3b-2512"
   language: "en"
 
 audio:
