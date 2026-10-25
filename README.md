@@ -52,7 +52,7 @@ First-time setup on the Pi:
 sudo apt update
 sudo apt install -y gcc python3-dev libffi-dev pkg-config libportaudio2 ffmpeg
 sudo mkdir -p /opt/voice-assistant && sudo chown $USER /opt/voice-assistant
-git clone git@github.com:YOUR_GITHUB_USER/smart-speaker.git /opt/voice-assistant
+git clone https://github.com/velix/smart-speaker.git /opt/voice-assistant
 cd /opt/voice-assistant
 uv sync
 ```
