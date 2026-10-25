@@ -41,17 +41,32 @@ It lives in the optional `wakeword` extra. On the Pi the daemon logs a clear
 error and runs button-triggered; a Pi-compatible wake-word engine
 (Porcupine or tflite) is a follow-up.
 
-## Deploy on the Pi
+## Deploy on the Pi (git pull workflow)
+
+The Pi runs a checkout of this repo at `/opt/voice-assistant` and pulls from
+GitHub — no manual file copying.
+
+First-time setup on the Pi:
 
 ```bash
 sudo apt update
-sudo apt install -y python3-venv portaudio19-dev libatlas-base-dev ffmpeg
+sudo apt install -y gcc python3-dev libffi-dev pkg-config libportaudio2 ffmpeg
 sudo mkdir -p /opt/voice-assistant && sudo chown $USER /opt/voice-assistant
-
-# copy the project to /opt/voice-assistant, then:
+git clone git@github.com:YOUR_GITHUB_USER/smart-speaker.git /opt/voice-assistant
 cd /opt/voice-assistant
 uv sync
 ```
+
+After pushing from your dev machine, update the Pi with:
+
+```bash
+./scripts/pi-update.sh        # git pull --ff-only + uv sync (+ service restart if running)
+```
+
+> Note: `uv` installs its own Python 3.11 on the Pi (system Python 3.9 is too
+> old). `openwakeword` is NOT installed on the Pi — onnxruntime has no 32-bit
+> armv7 wheels; the daemon runs button-triggered until a Pi-compatible
+> wake-word engine is added.
 
 Find your ALSA card (the Pi onboard jack is card 0, the HAT is usually 1 or 2):
 
