@@ -25,7 +25,7 @@ def test_24k_stereo_becomes_16k_mono():
         out = AudioIO._convert_pcm(pcm, wf.getframerate(), wf.getnchannels(), 16000)
 
     arr = np.frombuffer(out, dtype=np.int16)
-    assert len(arr) == 24000                      # 1 s at 16 kHz
+    assert len(arr) == 16000                      # 1 s at 16 kHz
     assert np.abs(arr).max() > 10000              # signal survived
 
 
