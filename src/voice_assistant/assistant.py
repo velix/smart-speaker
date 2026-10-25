@@ -47,6 +47,7 @@ class VoiceAssistant:
             out = Path("/tmp/utterance.wav")
             out.write_bytes(wav)
             log.info("saved %s (%d bytes)", out, len(wav))
+            self.leds.off()
             return
 
         self.leds.think()
