@@ -43,10 +43,25 @@ class AudioIO:
                 return
             self.play_stream.write(arr[i:i + chunk])
 
+    @staticmethod
+    def _convert_pcm(pcm: bytes, src_rate: int, channels: int, dst_rate: int) -> bytes:
+        """Int16 PCM → mono at dst_rate (linear resample). TTS engines vary."""
+        arr = np.frombuffer(pcm, dtype=np.int16)
+        if channels == 2:
+            arr = arr.reshape(-1, 2).mean(axis=1).astype(np.int16)
+        if src_rate != dst_rate:
+            n_out = int(len(arr) * dst_rate / src_rate)
+            xs = np.arange(len(arr), dtype=np.float64)
+            arr = np.interp(np.linspace(0.0, len(arr) - 1, n_out), xs, arr.astype(np.float64)).astype(np.int16)
+        return arr.tobytes()
+
     def play_wav_bytes(self, wav_bytes: bytes, stop_event=None):
         with wave.open(io.BytesIO(wav_bytes), "rb") as wf:
-            assert wf.getframerate() == self.rate, f"TTS sample rate {wf.getframerate()} != {self.rate}"
-            self.play_pcm(wf.readframes(wf.getnframes()), stop_event)
+            if wf.getsampwidth() != 2:
+                raise ValueError(f"TTS sample width {wf.getsampwidth() * 8} bit unsupported")
+            pcm = wf.readframes(wf.getnframes())
+            pcm = self._convert_pcm(pcm, wf.getframerate(), wf.getnchannels(), self.rate)
+        self.play_pcm(pcm, stop_event)
 
     def stop(self):
         self.capture_stream.stop(); self.capture_stream.close()
