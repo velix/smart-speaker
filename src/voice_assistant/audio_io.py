@@ -9,7 +9,10 @@ class AudioIO:
     def __init__(self, cfg):
         self.rate = cfg["rate"]
         self.capture_channels = cfg["channels"]
-        dev = f"plughw:{cfg['card']},0"
+        # sounddevice matches PortAudio device names by substring — the HAT
+        # enumerates as "seeed-2mic-voicecard ... (hw:N,0)". ALSA strings like
+        # "plughw:N,0" are NOT understood by sounddevice.
+        dev = f"hw:{cfg['card']},0"
         self.capture_stream = sd.InputStream(
             samplerate=self.rate, channels=self.capture_channels,
             dtype="int16", device=dev, blocksize=1024,
