@@ -62,7 +62,7 @@ class VoiceAssistant:
             self.messages.append({"role": "assistant", "content": reply})
             if len(self.messages) > 2 * self.max_turns + 1:
                 self.messages = [self.messages[0]] + self.messages[-2 * self.max_turns:]
-            audio_out = self.client.synthesize(reply)
+            audio_out = self._synthesize(reply)
         except Exception:
             log.exception("pipeline failed")
             self.leds.off()
@@ -81,6 +81,35 @@ class VoiceAssistant:
                 self._stop_playback.set()
             time.sleep(0.05)
         self.leds.off()
+
+    # ---------- TTS ----------
+
+    def _synthesize(self, text: str) -> bytes:
+        """TTS via the configured engine; falls back to the other engine."""
+        engine = self.cfg.get("tts", {}).get("engine", "openwebui")
+        try:
+            if engine == "piper":
+                return self._piper_speak(text)
+            return self.client.synthesize(text)
+        except Exception:
+            log.exception("%s TTS failed", engine)
+            if engine == "piper":
+                if self.client is None:
+                    raise
+                return self.client.synthesize(text)
+            return self._piper_speak(text)
+
+    def _piper_speak(self, text: str) -> bytes:
+        """Synthesize via the local piper binary → WAV bytes."""
+        import subprocess
+        import tempfile
+        tts = self.cfg.get("tts", {}).get("piper", {})
+        with tempfile.NamedTemporaryFile(suffix=".wav") as f:
+            subprocess.run(
+                [tts.get("bin", "/opt/piper/piper/piper"), "-m", tts["voice"],
+                 "-f", f.name],
+                input=text.encode(), check=True, capture_output=True, timeout=30)
+            return Path(f.name).read_bytes()
 
     def _play(self, audio_out: bytes):
         try:

@@ -101,6 +101,19 @@ aplay -D plughw:1,0 test.wav
 Set that card number in `config.yaml` (`audio.card`), plus your OpenWebUI URL
 and API key. LED test: `uv run python -m voice_assistant.leds test`.
 
+## TTS
+
+The daemon supports two TTS engines, selected by `tts.engine` in config.yaml:
+
+- `"piper"` — **local, on the Pi** (default): fast, offline, no external API.
+  One-time setup on the Pi: `./scripts/setup-pi-tts.sh` (installs to
+  `/opt/piper`, voice `en_US-lessac-medium`).
+- `"openwebui"` — server-side via OpenWebUI `/api/v1/audio/speech`.
+
+If the primary engine fails, the daemon automatically falls back to the
+other one (when available). For why the OpenWebUI built-in/Mistral TTS
+options were problematic, see `docs/tts-notes.md`.
+
 ## Bring-up phases
 
 Run each phase's test before moving to the next:
