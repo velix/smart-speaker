@@ -1450,12 +1450,16 @@ dependencies = [
     { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.11.*'" },
     { name = "numpy", version = "2.5.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
-    { name = "openwakeword" },
     { name = "pyyaml" },
     { name = "rpi-gpio", marker = "sys_platform == 'linux'" },
     { name = "sounddevice" },
     { name = "spidev", marker = "sys_platform == 'linux'" },
     { name = "webrtcvad-wheels" },
+]
+
+[package.optional-dependencies]
+wakeword = [
+    { name = "openwakeword" },
 ]
 
 [package.dev-dependencies]
@@ -1468,13 +1472,14 @@ requires-dist = [
     { name = "gpiozero", specifier = ">=2.0" },
     { name = "httpx", specifier = ">=0.27" },
     { name = "numpy", specifier = ">=1.24" },
-    { name = "openwakeword", specifier = ">=0.6.0" },
+    { name = "openwakeword", marker = "extra == 'wakeword'", specifier = ">=0.6.0" },
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "rpi-gpio", marker = "sys_platform == 'linux'", specifier = ">=0.7" },
     { name = "sounddevice", specifier = ">=0.4" },
     { name = "spidev", marker = "sys_platform == 'linux'", specifier = ">=3.6" },
     { name = "webrtcvad-wheels", specifier = ">=2.0.14" },
 ]
+provides-extras = ["wakeword"]
 
 [package.metadata.requires-dev]
 dev = [{ name = "pytest", specifier = ">=8.0" }]

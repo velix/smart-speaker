@@ -11,12 +11,17 @@ dependencies = [
     "numpy>=1.24",
     "sounddevice>=0.4",
     "webrtcvad-wheels>=2.0.14",
-    "openwakeword>=0.6.0",
     "gpiozero>=2.0",
     # Pi-only: these do not build/run off the Pi
     "spidev>=3.6; sys_platform == 'linux'",
     "RPi-GPIO>=0.7; sys_platform == 'linux'",
 ]
+
+[project.optional-dependencies]
+# openwakeword requires onnxruntime, which has no 32-bit armv7 wheels —
+# it cannot install on the Pi 3B (bullseye 32-bit). Wake-word engine for the
+# Pi will be Porcupine or a tflite-based approach instead.
+wakeword = ["openwakeword>=0.6.0"]
 
 [project.scripts]
 voice-assistant = "voice_assistant.assistant:main"

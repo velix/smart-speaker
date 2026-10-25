@@ -16,10 +16,16 @@ class WakeWordDetector:
         self._button = None
 
         if self.enabled:
-            from openwakeword.model import Model
-            self._model = Model(wakeword_models=[cfg.get("model", "hey_jarvis")])
-            threading.Thread(target=self._loop, daemon=True).start()
-            log.info("wake word '%s' active", cfg.get("model"))
+            try:
+                from openwakeword.model import Model
+            except ImportError as e:
+                self.enabled = False
+                log.error("openwakeword not installed (%s) — wake word disabled, "
+                          "button trigger still active", e)
+            else:
+                self._model = Model(wakeword_models=[cfg.get("model", "hey_jarvis")])
+                threading.Thread(target=self._loop, daemon=True).start()
+                log.info("wake word '%s' active", cfg.get("model"))
 
         if button_cfg.get("enabled", False):
             from gpiozero import Button

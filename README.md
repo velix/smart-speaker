@@ -26,13 +26,20 @@ tests/                    # smoke tests (no hardware needed)
 ## Development (any machine)
 
 ```bash
-uv sync                # creates .venv, installs deps + the package (editable)
-uv run pytest          # smoke tests
+uv sync                          # creates .venv, installs deps + the package (editable)
+uv run pytest                    # smoke tests
 uv run voice-assistant --help
+uv sync --extra wakeword         # also install openwakeword (Mac/dev only — see note)
 ```
 
 `spidev` and `RPi-GPIO` are installed only on Linux (`sys_platform == 'linux'`),
 so the project syncs and tests fine on macOS; LEDs just disable themselves.
+
+**Wake-word note:** `openwakeword` needs `onnxruntime`, which has **no 32-bit
+armv7 wheels** — so it cannot install on the Pi 3B (Raspbian 11, 32-bit).
+It lives in the optional `wakeword` extra. On the Pi the daemon logs a clear
+error and runs button-triggered; a Pi-compatible wake-word engine
+(Porcupine or tflite) is a follow-up.
 
 ## Deploy on the Pi
 
