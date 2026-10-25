@@ -7,6 +7,7 @@ set -euo pipefail
 PIPER_DIR=/opt/piper
 VOICE_DIR=$PIPER_DIR/voices
 VOICE=en_US-lessac-medium
+VOICE_PATH=en/en_US/lessac/medium/en_US-lessac-medium
 
 sudo mkdir -p "$PIPER_DIR" "$VOICE_DIR"
 sudo chown -R "$USER" "$PIPER_DIR"
@@ -17,10 +18,10 @@ if [ ! -x "$PIPER_DIR/piper/piper" ]; then
         | tar xz -C "$PIPER_DIR"
 fi
 
-if [ ! -f "$VOICE_DIR/$VOICE.onnx" ]; then
-    echo "Downloading voice $VOICE..."
-    curl -L -o "$VOICE_DIR/$VOICE.onnx" "https://huggingface.co/rhasspy/voices/resolve/main/en/$VOICE.onnx"
-    curl -L -o "$VOICE_DIR/$VOICE.onnx.json" "https://huggingface.co/rhasspy/voices/resolve/main/en/$VOICE.onnx.json"
+if ! python3 -c "import json,sys; json.load(open(sys.argv[1]))" "$VOICE_DIR/$VOICE.onnx.json" 2>/dev/null; then
+    echo "Voice missing or corrupt — downloading $VOICE..."
+    curl -fL -o "$VOICE_DIR/$VOICE.onnx" "https://huggingface.co/rhasspy/piper-voices/resolve/main/$VOICE_PATH.onnx"
+    curl -fL -o "$VOICE_DIR/$VOICE.onnx.json" "https://huggingface.co/rhasspy/piper-voices/resolve/main/$VOICE_PATH.onnx.json"
 fi
 
 echo "Synthesizing a test clip..."
