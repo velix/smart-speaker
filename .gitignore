@@ -1,0 +1,20 @@
+# uv / python
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+dist/
+build/
+
+# uv lock is tracked; keep it
+# test / scratch
+.pytest_cache/
+/tmp/
+*.wav
+*.mp3
+
+# macOS
+.DS_Store
+
+# local secrets — keep a config.example.yaml instead
+config.local.yaml

@@ -1,0 +1,31 @@
+openwebui:
+  base_url: "http://192.168.1.50:3000"   # your OpenWebUI instance
+  api_key: "REPLACE_WITH_OPENWEBUI_API_KEY"
+  model: "llama3.2:3b"
+  language: "en"
+
+audio:
+  card: 1            # arecord -l → 'card N: seeed2micvoicec'
+  rate: 16000
+  channels: 2        # WM8960 captures stereo; we slice channel 0
+  playback_volume: 0.9
+
+wake_word:
+  enabled: true
+  engine: "openwakeword"
+  model: "hey_jarvis"
+  threshold: 0.5
+
+vad:
+  silence_ms: 600
+  max_utterance_s: 12
+  min_speech_ms: 200
+
+button:
+  enabled: true      # GPIO17 push-to-talk fallback / barge-in
+
+history:
+  max_turns: 10
+
+server:
+  system_prompt: "You are a voice assistant on a smart speaker. Reply in 1-2 short conversational sentences."

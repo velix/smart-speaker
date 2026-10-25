@@ -1,0 +1,16 @@
+[Unit]
+Description=Smart speaker voice assistant
+After=network-online.target sound.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/opt/voice-assistant
+ExecStart=/opt/voice-assistant/.venv/bin/voice-assistant
+Restart=on-failure
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target
