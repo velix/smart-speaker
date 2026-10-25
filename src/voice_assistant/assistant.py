@@ -65,6 +65,7 @@ class VoiceAssistant:
             audio_out = self.client.synthesize(reply)
         except Exception:
             log.exception("pipeline failed")
+            self.leds.off()
             return
 
         # ---- playback with barge-in (wake word/button stops audio) ----
