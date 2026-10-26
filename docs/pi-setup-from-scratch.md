@@ -67,8 +67,9 @@ amixer -c 1 cset name="ADC PCM Capture Volume" 195,195
 amixer -c 1 cset name="Headphone Playback Volume" 127,127
 # CRITICAL: the input-boost→ADC gate. Both default to OFF on a fresh card,
 # and WITHOUT them the mics record digital silence (VAD/wake word hear
-# nothing). Name-based cset can silently fail for these two — use numids:
-for n in "Left Input Mixer Boost Switch" "Right Input Mixer Boost Switch"; do
+# nothing). Name-based cset can silently fail for these — use numids:
+for n in "Left Input Mixer Boost Switch" "Right Input Mixer Boost Switch" \
+         "Left Output Mixer PCM Playback Switch" "Right Output Mixer PCM Playback Switch"; do
   nid=$(amixer -c 1 contents | grep "name=.$n." | sed "s/numid=\([0-9]*\),.*/\1/")
   amixer -c 1 cset numid=$nid on
 done
