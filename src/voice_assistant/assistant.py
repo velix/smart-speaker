@@ -63,7 +63,11 @@ class VoiceAssistant:
         log.info("turn %d started: trigger=%s", self._turn_count, trigger)
 
         log.info("capture: listening for speech (VAD, max %.0f s)", self.recorder.max_s)
-        wav = self.recorder.record_utterance()
+        self.wake.pause()          # exclusive access to the mic while recording
+        try:
+            wav = self.recorder.record_utterance()
+        finally:
+            self.wake.resume()     # live again for wake-word barge-in during playback
         if wav is None:
             log.info("capture: no speech detected — turn ended")
             return
