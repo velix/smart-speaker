@@ -57,26 +57,25 @@ SSH · **[gate]** = stop if this fails.
       under load and is acceptable). [gate: undervoltage ⇒ revisit power
       before continuing]
 
-## 4. Driver install — THE critical path [agent]
+## 4. Driver install — RESOLVED DIFFERENTLY THAN PLANNED (2026-10-26, actual)
 
-Do **not** use the Keyestudio wiki's Dropbox zip (`seeed-voicecard-6.1`) —
-it is pinned to 2022 kernels. Use upstream:
+Upstream `install_arm64.sh` needed three patches on trixie 6.18
+(`/boot/kernel8.img` symlink, usr-merge fix for its `awk` header-version
+parsing, `get_kernel_version` stubbed to `uname -r`), and its runtime
+`dtoverlay` re-application clobbers the clock phandles ("No MCLK
+configured" — wm8960 node loses its `clocks` property). The working solution:
 
-- [ ] ```bash
-      git clone https://github.com/respeaker/seeed-voicecard
-      cd seeed-voicecard && sudo ./install_arm64.sh
-      sudo reboot
-      ```
-      (only remove /etc/asound.conf first if reusing a non-fresh image)
-- [ ] After reboot: `arecord -l && aplay -l` — must show
-      `card N: seeed2micvoicec` (both capture and playback). Note N. [gate:
-      no seeed card ⇒ do not continue; collect `sudo dmesg | grep -i wm8960`
-      output and check upstream repo issues — 64-bit support is marked
-      "experimental"]
-- [ ] Update `audio.card` in `config.yaml` if N ≠ 2, and the test commands
-      below to `plughw:N,0`.
-- [ ] LED test: `uv run python -m voice_assistant.leds test` (after step 5)
-      — 3 LEDs should cycle colors.
+- [x] disable `seeed-voicecard.service` (it re-applies the overlay at runtime)
+- [x] put `dtoverlay=wm8960-soundcard` in config.txt (the kernel-bundled
+      generic WM8960 overlay — seeed's old-style phandle DTBO breaks on 2026
+      firmware; the kernel team's overlay is built for current kernels)
+- [x] card enumerates as `wm8960soundcard` at **card 1** → config.yaml
+      `audio.card: 1`
+- [x] mixer set manually (old seeed asound.state doesn't match the card
+      name): Capture Switch on, Capture Volume 39, ADC PCM 195,
+      Headphone 127
+- [x] Verified: `arecord -D plughw:1,0 ...` records, playback works, no
+      "No MCLK" in dmesg, clean noise floor (rms 27)
 
 ## 5. Deploy the project [agent]
 
