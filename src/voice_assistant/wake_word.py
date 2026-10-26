@@ -12,6 +12,7 @@ class WakeWordDetector:
         self.threshold = cfg.get("threshold", 0.5)
         self.enabled = cfg.get("enabled", False)
         self._flag = threading.Event()
+        self._source = None
         self._model = None
         self._button = None
 
@@ -30,7 +31,7 @@ class WakeWordDetector:
         if button_cfg.get("enabled", False):
             from gpiozero import Button
             self._button = Button(17, pull_up=True, bounce_time=0.1)
-            self._button.when_pressed = self._flag.set
+            self._button.when_pressed = lambda: self._fire("button")
             log.info("GPIO17 button trigger active")
 
     def _loop(self):
@@ -41,7 +42,15 @@ class WakeWordDetector:
             for name, score in scores.items():
                 if score >= self.threshold:
                     log.info("wake word '%s' score %.2f", name, score)
-                    self._flag.set()
+                    self._fire("wake_word")
+
+    def _fire(self, source: str):
+        self._source = source
+        self._flag.set()
+
+    def last_trigger(self) -> str:
+        """What fired the current trigger: 'wake_word', 'button', or 'unknown'."""
+        return self._source or "unknown"
 
     def detected(self) -> bool:
         return self._flag.is_set()

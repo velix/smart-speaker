@@ -33,6 +33,10 @@ tts:
     bin: "/opt/piper/piper/piper"
     voice: "/opt/piper/voices/en_US-lessac-low.onnx"
 
+health:
+  enabled: true      # GET /health JSON endpoint for uptime-kuma
+  port: 8310
+
 history:
   max_turns: 10
 

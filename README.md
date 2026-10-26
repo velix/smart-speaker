@@ -114,6 +114,30 @@ If the primary engine fails, the daemon automatically falls back to the
 other one (when available). For why the OpenWebUI built-in/Mistral TTS
 options were problematic, see `docs/tts-notes.md`.
 
+## Health endpoint (uptime-kuma)
+
+The daemon serves `GET http://<pi>:8310/health` when `health.enabled` is true
+in config.yaml. It returns **200** while both the mic capture stream and the
+playback stream are active, **503** otherwise. Example response:
+
+```json
+{
+  "status": "ok",
+  "uptime_s": 3600,
+  "capture_mic": "ready",
+  "output_speaker": "ready",
+  "trigger": {"wake_word": false, "button": true},
+  "tts_engine": "piper",
+  "turns": 12
+}
+```
+
+In uptime-kuma add an **HTTP(s)** monitor for
+`http://192.168.2.145:8310/health`. Note: "output_speaker" reflects the
+playback stream state on the HAT's jack — the WM8960 does not expose
+physical plug detection, so a disconnected cable downstream of the jack
+cannot be detected.
+
 ## Bring-up phases
 
 Run each phase's test before moving to the next:

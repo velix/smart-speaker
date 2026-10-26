@@ -5,10 +5,12 @@ Phases: run with --phase 3 to only record+save (no server); default is the
 full pipeline (phase 4). Wake word activates via config.
 """
 import argparse
+import io
 import logging
 import os
 import threading
 import time
+import wave
 from pathlib import Path
 
 import yaml
@@ -35,34 +37,53 @@ class VoiceAssistant:
         self.max_turns = cfg["history"]["max_turns"]
         self.messages = [{"role": "system", "content": self.system_prompt}]
         self._stop_playback = threading.Event()
+        self._started = time.time()
+        self._turn_count = 0
+        self.health = None
 
     # ---------- one conversation turn ----------
 
-    def turn(self):
+    def turn(self, trigger: str = "unknown"):
+        self._turn_count += 1
+        log.info("turn %d started: trigger=%s", self._turn_count, trigger)
+
+        log.info("capture: listening for speech (VAD, max %.0f s)", self.recorder.max_s)
         wav = self.recorder.record_utterance()
         if wav is None:
-            log.info("no speech captured")
+            log.info("capture: no speech detected — turn ended")
             return
+        with wave.open(io.BytesIO(wav)) as wf:
+            self._last_capture_s = wf.getnframes() / wf.getframerate()
+        log.info("capture: %.1f s utterance captured (%d bytes)",
+                 self._last_capture_s, len(wav))
+
         if not self.full:
             out = Path("/tmp/utterance.wav")
             out.write_bytes(wav)
-            log.info("saved %s (%d bytes)", out, len(wav))
+            log.info("capture: saved %s (%d bytes)", out, len(wav))
             self.leds.off()
             return
 
         self.leds.think()
         try:
+            log.info("stt: transcribing %d-byte utterance via OpenWebUI", len(wav))
             text = self.client.transcribe(wav)
-            log.info("user: %r", text)
+            log.info("stt: transcript=%r", text)
             if not text:
+                log.info("stt: empty transcript — turn ended")
                 return
+
             self.messages.append({"role": "user", "content": text})
+            log.info("llm: requesting reply from %s (context: %d messages)",
+                     self.client.model, len(self.messages))
             reply = self.client.chat(self.messages)
-            log.info("assistant: %r", reply[:120])
+            log.info("llm: reply=%r", reply)
             self.messages.append({"role": "assistant", "content": reply})
             if len(self.messages) > 2 * self.max_turns + 1:
                 self.messages = [self.messages[0]] + self.messages[-2 * self.max_turns:]
+
             audio_out = self._synthesize(reply)
+            log.info("tts: audio ready (%d bytes)", len(audio_out))
         except Exception:
             log.exception("pipeline failed")
             self.leds.off()
@@ -72,14 +93,16 @@ class VoiceAssistant:
         self._stop_playback.clear()
         self.wake.reset()
         self.leds.speak()
+        log.info("playback: starting")
         player = threading.Thread(
             target=self._play, args=(audio_out,), daemon=True)
         player.start()
         while player.is_alive():
             if self.wake.detected():
-                log.info("barge-in")
+                log.info("playback: barge-in via %s", self.wake.last_trigger())
                 self._stop_playback.set()
             time.sleep(0.05)
+        log.info("playback: done — turn %d complete", self._turn_count)
         self.leds.off()
 
     # ---------- TTS ----------
@@ -88,15 +111,17 @@ class VoiceAssistant:
         """TTS via the configured engine; falls back to the other engine."""
         engine = self.cfg.get("tts", {}).get("engine", "openwebui")
         try:
-            if engine == "piper":
-                return self._piper_speak(text)
-            return self.client.synthesize(text)
+            out = self._piper_speak(text) if engine == "piper" else self.client.synthesize(text)
+            log.info("tts: synthesized via %s", engine)
+            return out
         except Exception:
             log.exception("%s TTS failed", engine)
             if engine == "piper":
                 if self.client is None:
                     raise
+                log.info("tts: falling back to openwebui")
                 return self.client.synthesize(text)
+            log.info("tts: falling back to piper")
             return self._piper_speak(text)
 
     def _piper_speak(self, text: str) -> bytes:
@@ -129,23 +154,50 @@ class VoiceAssistant:
         except Exception:
             log.exception("playback failed")
 
+    # ---------- health endpoint (uptime-kuma) ----------
+
+    def _health_status(self):
+        capture_ready = self.audio.capture_stream.active
+        playback_ready = self.audio.play_stream.active
+        ok = capture_ready and playback_ready
+        payload = {
+            "status": "ok" if ok else "degraded",
+            "uptime_s": int(time.time() - self._started),
+            "capture_mic": "ready" if capture_ready else "unavailable",
+            "output_speaker": "ready" if playback_ready else "unavailable",
+            "trigger": {
+                "wake_word": self.wake.enabled,
+                "button": self.wake._button is not None,
+            },
+            "tts_engine": self.cfg.get("tts", {}).get("engine", "openwebui"),
+            "turns": self._turn_count,
+        }
+        return ok, payload
+
     # ---------- main loop ----------
 
     def run(self):
         log.info("assistant up (wake=%s button=%s full=%s)",
                  self.wake.enabled, self.wake._button is not None, self.full)
+        h = self.cfg.get("health", {})
+        if h.get("enabled", False):
+            from .health import HealthServer
+            self.health = HealthServer(h.get("port", 8310), self._health_status)
+            self.health.start()
         if self.wake.enabled or self.wake._button:
             while True:
                 if self.wake.detected():
+                    trigger = self.wake.last_trigger()
                     self.wake.reset()
                     self.leds.wakeup()
                     if self.client:
+                        log.info("network: warming OpenWebUI connection")
                         threading.Thread(target=self.client.warm, daemon=True).start()
-                    self.turn()
+                    self.turn(trigger)
                 time.sleep(0.02)
         else:
             log.info("no trigger configured — running single turn")
-            self.turn()
+            self.turn("manual")
 
 
 def _deep_merge(base: dict, override: dict):
@@ -195,6 +247,8 @@ def main():
     finally:
         assistant.audio.stop()
         assistant.leds.off()
+        if assistant.health:
+            assistant.health.stop()
 
 
 if __name__ == "__main__":
