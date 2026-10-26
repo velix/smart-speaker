@@ -214,6 +214,8 @@ class VoiceAssistant:
             from .health import HealthServer
             self.health = HealthServer(h.get("port", 8310), self._health_status)
             self.health.start()
+        if self.tts_engine:
+            threading.Thread(target=self.tts_engine.prewarm, daemon=True).start()
         if self.wake.enabled or self.wake._button:
             while True:
                 if self.wake.detected():
