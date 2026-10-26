@@ -2,6 +2,9 @@
 # One-time on-Pi setup for local piper TTS. Run ON THE PI:
 #   ./scripts/setup-pi-tts.sh
 # Downloads piper (armv7l build) + an English voice to /opt/piper.
+# NOTE: binary comes from the ARCHIVED rhasspy/piper repo (Nov 2023) — the only
+# piper release with a prebuilt armv7l binary. The maintained successor
+# (OHF-Voice/piper1-gpl) has no armv7 builds; see docs/tts-notes.md.
 set -euo pipefail
 
 PIPER_DIR=/opt/piper

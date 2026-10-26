@@ -62,3 +62,18 @@ TTS runs **locally on the Pi** with piper (see README "TTS" and
 `scripts/setup-pi-tts.sh`): fast, offline, no voice cloning. The daemon's
 `tts.engine` config selects the primary engine; the other engine is the
 automatic fallback.
+
+### Piper binary provenance (important)
+
+The installed binary is from the **archived** `rhasspy/piper` repo (Nov 2023
+release, `piper_linux_armv7l.tar.gz`) — the only piper release that ever
+shipped a ready-made 32-bit armv7 binary. The maintained successor
+`OHF-Voice/piper1-gpl` (v1.8.0, Sep 2026, Open Home Foundation) publishes
+wheels only for aarch64/x86_64/macOS/Windows — **no armv7** — and building it
+from source on the Pi needs onnxruntime, which has no armv7 builds either
+(same root cause as openwakeword). Consequence: the Pi's piper is frozen at
+the 2023 binary (self-contained, bundles onnxruntime 1.14.1; works at
+RTF ~1 with the lessac-low voice, but receives no updates). Moving the Pi to
+64-bit Raspberry Pi OS would unlock the maintained piper wheels *and*
+openwakeword. Voices remain at the maintained `rhasspy/piper-voices`
+HF dataset.
