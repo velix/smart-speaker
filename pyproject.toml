@@ -11,6 +11,8 @@ dependencies = [
     "numpy>=1.24",
     "sounddevice>=0.4",
     "webrtcvad-wheels>=2.0.14",
+    # wake word on the 64-bit Pi (aarch64 has onnxruntime wheels; armv7/macOS do not)
+    "openwakeword>=0.6.0; sys_platform == 'linux' and platform_machine == 'aarch64'",
     "gpiozero>=2.0",
     # Pi-only: these do not build/run off the Pi
     "spidev>=3.6; sys_platform == 'linux'",
