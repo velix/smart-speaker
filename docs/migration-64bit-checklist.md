@@ -63,11 +63,11 @@ Do **not** use the Keyestudio wiki's Dropbox zip (`seeed-voicecard-6.1`) —
 it is pinned to 2022 kernels. Use upstream:
 
 - [ ] ```bash
-      sudo rm -f /etc/asound.conf   # if a stale config lingers
       git clone https://github.com/respeaker/seeed-voicecard
       cd seeed-voicecard && sudo ./install_arm64.sh
       sudo reboot
       ```
+      (only remove /etc/asound.conf first if reusing a non-fresh image)
 - [ ] After reboot: `arecord -l && aplay -l` — must show
       `card N: seeed2micvoicec` (both capture and playback). Note N. [gate:
       no seeed card ⇒ do not continue; collect `sudo dmesg | grep -i wm8960`
@@ -108,10 +108,14 @@ it is pinned to 2022 kernels. Use upstream:
 - [ ] **Phase 4 (full pipeline)**: `uv run voice-assistant`, button + speak —
       spoken reply from the speaker; log shows `trigger=button`,
       `stt:`, `llm:`, `tts: cleaned text=`, `playback:`.
-- [ ] **Phase 5 (wake word — the payoff)**: `config.yaml` has
-      `wake_word.enabled: true` (already). Restart the daemon and say
-      "hey jarvis". Expected log: `wake word 'hey_jarvis' score ...` and
-      `trigger=wake_word`. Tune `threshold` up if false-triggering.
+- [ ] **Phase 5 (wake word — the payoff)**: FIRST measure performance —
+      on the Pi, time 10 consecutive `model.predict()` calls on synthetic
+      1280-sample frames; each 80 ms frame must predict in < 80 ms
+      (RTF < 1) or the wake loop cannot keep up and wake word is NOT viable
+      on this hardware — in that case fall back to Porcupine or tflite
+      instead of tuning thresholds. If RTF is fine: restart the daemon and
+      say "hey jarvis". Expected log: `wake word 'hey_jarvis' score ...`
+      and `trigger=wake_word`. Tune `threshold` up if false-triggering.
 
 ## 7. systemd (phase 6) [agent, after phases pass]
 
