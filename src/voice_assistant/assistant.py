@@ -8,6 +8,7 @@ import argparse
 import io
 import logging
 import os
+import re
 import threading
 import time
 import wave
@@ -22,6 +23,20 @@ from .vad import UtteranceRecorder
 from .wake_word import WakeWordDetector
 
 log = logging.getLogger("assistant")
+
+# Markdown emphasis, emoji, and text emoticons — not speakable; strip before TTS.
+_MARKDOWN = re.compile(r"(?<!\w)(\*+|_+|`+)(?=\w)(.+?)(?<=\w)\1(?!\w)", re.DOTALL)
+_EMOJI = re.compile("[\U0001F000-\U0001FAFF\u2600-\u27BF\u2B00-\u2BFF\uFE0F\u200D]")
+_EMOTICON = re.compile(r"(?<!\S)[:;=8xX][-o\^'.]?[)DPp3/\\|(\]](?!\S)")
+
+
+def clean_for_tts(text: str) -> str:
+    """Strip non-verbal content (markdown, emoji, emoticons) for speech."""
+    text = _MARKDOWN.sub(r"\2", text)          # *word* **word** _word_ `word`
+    text = text.replace("*", " ").replace("_", " ").replace("`", " ")
+    text = _EMOTICON.sub(" ", text)
+    text = _EMOJI.sub("", text)
+    return re.sub(r"\s+", " ", text).strip()
 
 
 class VoiceAssistant:
@@ -82,7 +97,9 @@ class VoiceAssistant:
             if len(self.messages) > 2 * self.max_turns + 1:
                 self.messages = [self.messages[0]] + self.messages[-2 * self.max_turns:]
 
-            audio_out = self._synthesize(reply)
+            spoken = clean_for_tts(reply)
+            log.info("tts: cleaned text=%r", spoken)
+            audio_out = self._synthesize(spoken)
             log.info("tts: audio ready (%d bytes)", len(audio_out))
         except Exception:
             log.exception("pipeline failed")
