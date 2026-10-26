@@ -17,8 +17,13 @@ sudo mkdir -p "$PIPER_DIR" "$VOICE_DIR"
 sudo chown -R "$USER" "$PIPER_DIR"
 
 if [ ! -x "$PIPER_DIR/piper/piper" ]; then
-    echo "Downloading piper..."
-    curl -L https://github.com/rhasspy/piper/releases/latest/download/piper_linux_armv7l.tar.gz \
+    echo "Downloading piper for $(uname -m)..."
+    case "$(uname -m)" in
+        aarch64) PIPER_TARBALL="piper_linux_aarch64.tar.gz" ;;
+        armv7l|armv6l) PIPER_TARBALL="piper_linux_armv7l.tar.gz" ;;
+        *) echo "Unsupported arch $(uname -m)"; exit 1 ;;
+    esac
+    curl -fL "https://github.com/rhasspy/piper/releases/latest/download/$PIPER_TARBALL" \
         | tar xz -C "$PIPER_DIR"
 fi
 

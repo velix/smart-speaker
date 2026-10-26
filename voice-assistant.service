@@ -5,7 +5,7 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=pi
+User=velix
 WorkingDirectory=/opt/voice-assistant
 ExecStart=/opt/voice-assistant/.venv/bin/voice-assistant
 Restart=on-failure
