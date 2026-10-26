@@ -65,10 +65,21 @@ amixer -c 1 cset name="Capture Switch" on,on
 amixer -c 1 cset name="Capture Volume" 39,39
 amixer -c 1 cset name="ADC PCM Capture Volume" 195,195
 amixer -c 1 cset name="Headphone Playback Volume" 127,127
+# CRITICAL: the input-boost→ADC gate. Both default to OFF on a fresh card,
+# and WITHOUT them the mics record digital silence (VAD/wake word hear
+# nothing). Name-based cset can silently fail for these two — use numids:
+for n in "Left Input Mixer Boost Switch" "Right Input Mixer Boost Switch"; do
+  nid=$(amixer -c 1 contents | grep "name=.$n." | sed "s/numid=\([0-9]*\),.*/\1/")
+  amixer -c 1 cset numid=$nid on
+done
+amixer -c 1 cset name="Left Input Boost Mixer LINPUT1 Volume" 3
+amixer -c 1 cset name="Right Input Boost Mixer RINPUT1 Volume" 3
+sudo rm -f /var/lib/alsa/asound.state && sudo alsactl store   # persist across reboots
 ```
 
-Verify the noise floor is audible but not clipping (record 3 s, expect
-non-trivial rms; the old seeed asound.state does NOT apply to this card):
+Verify by speaking 6 s at the HAT and checking levels (expect peak
+>10000 with speech; rms ~2800; if peak ~300 and rms ~25 the input gate is
+still closed):
 
 ```bash
 arecord -D plughw:1,0 -f S16_LE -r 16000 -c 2 -d 3 /tmp/level.wav
