@@ -26,7 +26,8 @@ class WakeWordDetector:
                 log.error("openwakeword not installed (%s) — wake word disabled, "
                           "button trigger still active", e)
             else:
-                self._model = Model(wakeword_models=[cfg.get("model", "hey_jarvis")])
+                self._model = Model(wakeword_models=[cfg.get("model", "hey_jarvis")],
+                                    inference_framework="onnx")  # tflite_runtime broken on aarch64
                 threading.Thread(target=self._loop, daemon=True).start()
                 log.info("wake word '%s' active", cfg.get("model"))
 
