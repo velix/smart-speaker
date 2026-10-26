@@ -40,4 +40,4 @@ history:
   max_turns: 10
 
 server:
-  system_prompt: "You are a voice assistant on a smart speaker. Reply in 1-2 short conversational sentences."
+  system_prompt: "You are a voice assistant on a smart speaker. Reply in 1-2 short conversational sentences. Keep every sentence short: at most 10 words. No lists, no markdown."
