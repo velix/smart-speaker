@@ -1,66 +1,79 @@
-"""TTS engine selection and fallback in VoiceAssistant._synthesize."""
-import pytest
+"""TTS engine selection and fallback in VoiceAssistant._tts_chunks."""
+import threading
 
 from voice_assistant.assistant import VoiceAssistant
 
 
-def _bare_assistant(cfg, client=None):
-    """Build a VoiceAssistant without hardware/audio init."""
+class FakeAudio:
+    def wav_to_pcm(self, wav):
+        return b"WAV2PCM:" + wav
+
+    def mp3_to_pcm(self, mp3):
+        return b"MP32PCM:" + mp3
+
+
+class FakePiper:
+    def __init__(self, fail=False):
+        self.fail = fail
+        self.stopped = False
+
+    def chunks(self, text):
+        if self.fail:
+            raise RuntimeError("piper broken")
+        yield b"P1"
+        yield b"P2"
+
+    def stop(self):
+        self.stopped = True
+
+
+class FakeClient:
+    def __init__(self, data=b"RIFFxxxx", fail=False):
+        self.data = data
+        self.fail = fail
+
+    def synthesize(self, text):
+        if self.fail:
+            raise RuntimeError("server tts down")
+        return self.data
+
+
+def _bare(cfg, client=None, engine=None):
     va = object.__new__(VoiceAssistant)
     va.cfg = cfg
     va.client = client
+    va.tts_engine = engine
+    va.audio = FakeAudio()
+    va._stop_playback = threading.Event()
     return va
 
 
-def test_piper_engine_primary():
-    va = _bare_assistant({"tts": {"engine": "piper"}})
-    calls = []
-
-    def fake_piper(text):
-        calls.append(("piper", text))
-        return b"WAV"
-
-    va._piper_speak = fake_piper
-    assert va._synthesize("hello") == b"WAV"
-    assert calls == [("piper", "hello")]
+def test_piper_engine_primary_streams_chunks():
+    va = _bare({"tts": {"engine": "piper"}}, engine=FakePiper())
+    assert list(va._tts_chunks("hello")) == [b"P1", b"P2"]
 
 
 def test_piper_failure_falls_back_to_openwebui():
-    class FakeClient:
-        def synthesize(self, text):
-            return b"SERVER-WAV"
-
-    va = _bare_assistant({"tts": {"engine": "piper"}}, client=FakeClient())
-
-    def failing_piper(text):
-        raise RuntimeError("piper missing")
-
-    va._piper_speak = failing_piper
-    assert va._synthesize("hello") == b"SERVER-WAV"
+    va = _bare({"tts": {"engine": "piper"}}, client=FakeClient(), engine=FakePiper(fail=True))
+    assert list(va._tts_chunks("hello")) == [b"WAV2PCM:RIFFxxxx"]
 
 
-def test_piper_failure_without_client_raises():
-    va = _bare_assistant({"tts": {"engine": "piper"}}, client=None)
-    va._piper_speak = lambda text: (_ for _ in ()).throw(RuntimeError("gone"))
-    with pytest.raises(RuntimeError):
-        va._synthesize("hello")
+def test_piper_failure_without_client_yields_nothing():
+    va = _bare({"tts": {"engine": "piper"}}, client=None, engine=FakePiper(fail=True))
+    assert list(va._tts_chunks("hello")) == []
 
 
 def test_openwebui_failure_falls_back_to_piper():
-    class FakeClient:
-        def synthesize(self, text):
-            raise RuntimeError("server tts down")
+    va = _bare({"tts": {"engine": "openwebui"}}, client=FakeClient(fail=True),
+               engine=FakePiper())
+    assert list(va._tts_chunks("hello")) == [b"P1", b"P2"]
 
-    va = _bare_assistant({"tts": {"engine": "openwebui"}}, client=FakeClient())
-    va._piper_speak = lambda text: b"PIPER-WAV"
-    assert va._synthesize("hello") == b"PIPER-WAV"
+
+def test_openwebui_mp3_response_converted():
+    va = _bare({"tts": {"engine": "openwebui"}}, client=FakeClient(data=b"ID3mp3data"))
+    assert list(va._tts_chunks("hello")) == [b"MP32PCM:ID3mp3data"]
 
 
 def test_default_engine_is_openwebui():
-    class FakeClient:
-        def synthesize(self, text):
-            return b"SERVER-WAV"
-
-    va = _bare_assistant({}, client=FakeClient())
-    va._piper_speak = lambda text: pytest.fail("piper must not be called")
-    assert va._synthesize("hello") == b"SERVER-WAV"
+    va = _bare({}, client=FakeClient())
+    assert list(va._tts_chunks("hello")) == [b"WAV2PCM:RIFFxxxx"]

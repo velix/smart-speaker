@@ -55,13 +55,21 @@ class AudioIO:
             arr = np.interp(np.linspace(0.0, len(arr) - 1, n_out), xs, arr.astype(np.float64)).astype(np.int16)
         return arr.tobytes()
 
-    def play_wav_bytes(self, wav_bytes: bytes, stop_event=None):
+    def wav_to_pcm(self, wav_bytes: bytes) -> bytes:
+        """WAV of any rate/channels → int16 mono PCM at our playback rate."""
         with wave.open(io.BytesIO(wav_bytes), "rb") as wf:
             if wf.getsampwidth() != 2:
                 raise ValueError(f"TTS sample width {wf.getsampwidth() * 8} bit unsupported")
             pcm = wf.readframes(wf.getnframes())
-            pcm = self._convert_pcm(pcm, wf.getframerate(), wf.getnchannels(), self.rate)
-        self.play_pcm(pcm, stop_event)
+            return self._convert_pcm(pcm, wf.getframerate(), wf.getnchannels(), self.rate)
+
+    def mp3_to_pcm(self, mp3_bytes: bytes) -> bytes:
+        """MP3 bytes → int16 mono PCM at our playback rate, via ffmpeg."""
+        import subprocess
+        wav = subprocess.run(
+            ["ffmpeg", "-loglevel", "error", "-i", "pipe:0", "-f", "wav", "-"],
+            input=mp3_bytes, capture_output=True, check=True, timeout=30).stdout
+        return self.wav_to_pcm(wav)
 
     def stop(self):
         self.capture_stream.stop(); self.capture_stream.close()

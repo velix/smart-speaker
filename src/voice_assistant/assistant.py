@@ -55,6 +55,12 @@ class VoiceAssistant:
         self._started = time.time()
         self._turn_count = 0
         self.health = None
+        self.tts_engine = None
+        if cfg.get("tts", {}).get("piper", {}).get("voice"):
+            from .piper_engine import PiperEngine
+            self.tts_engine = PiperEngine(
+                cfg["tts"]["piper"],
+                lambda pcm, rate, ch: AudioIO._convert_pcm(pcm, rate, ch, self.audio.rate))
 
     # ---------- one conversation turn ----------
 
@@ -103,75 +109,78 @@ class VoiceAssistant:
 
             spoken = clean_for_tts(reply)
             log.info("tts: cleaned text=%r", spoken)
-            audio_out = self._synthesize(spoken)
-            log.info("tts: audio ready (%d bytes)", len(audio_out))
         except Exception:
             log.exception("pipeline failed")
             self.leds.off()
             return
 
-        # ---- playback with barge-in (wake word/button stops audio) ----
+        # ---- streaming playback with barge-in (wake word/button stops audio) ----
         self._stop_playback.clear()
         self.wake.reset()
         self.leds.speak()
         log.info("playback: starting")
         player = threading.Thread(
-            target=self._play, args=(audio_out,), daemon=True)
+            target=self._play_tts, args=(spoken,), daemon=True)
         player.start()
         while player.is_alive():
             if self.wake.detected():
                 log.info("playback: barge-in via %s", self.wake.last_trigger())
                 self._stop_playback.set()
+                if self.tts_engine:
+                    self.tts_engine.stop()   # kill resident synthesis mid-stream
             time.sleep(0.05)
         log.info("playback: done — turn %d complete", self._turn_count)
         self.leds.off()
 
     # ---------- TTS ----------
 
-    def _synthesize(self, text: str) -> bytes:
-        """TTS via the configured engine; falls back to the other engine."""
+    def _server_tts_pcm(self, text: str) -> bytes:
+        """OpenWebUI TTS → playback-rate PCM (WAV or MP3 response)."""
+        data = self.client.synthesize(text)
+        return self.audio.wav_to_pcm(data) if data[:4] == b"RIFF" else self.audio.mp3_to_pcm(data)
+
+    def _tts_chunks(self, text: str):
+        """Yield playback-rate PCM chunks from the configured engine,
+        falling back to the other engine on failure."""
         engine = self.cfg.get("tts", {}).get("engine", "openwebui")
         try:
-            out = self._piper_speak(text) if engine == "piper" else self.client.synthesize(text)
-            log.info("tts: synthesized via %s", engine)
-            return out
+            if engine == "piper":
+                if self.tts_engine is None:
+                    raise RuntimeError("piper voice not configured")
+                yield from self.tts_engine.chunks(text)
+                return
+            yield self._server_tts_pcm(text)
+            return
         except Exception:
+            if self._stop_playback.is_set():     # barge-in kill — not a failure
+                return
             log.exception("%s TTS failed", engine)
+        try:
             if engine == "piper":
                 if self.client is None:
-                    raise
+                    raise RuntimeError("no openwebui client for TTS fallback")
                 log.info("tts: falling back to openwebui")
-                return self.client.synthesize(text)
-            log.info("tts: falling back to piper")
-            return self._piper_speak(text)
-
-    def _piper_speak(self, text: str) -> bytes:
-        """Synthesize via the local piper binary → WAV bytes."""
-        import subprocess
-        import tempfile
-        tts = self.cfg.get("tts", {}).get("piper", {})
-        with tempfile.NamedTemporaryFile(suffix=".wav") as f:
-            subprocess.run(
-                [tts.get("bin", "/opt/piper/piper/piper"), "-m", tts["voice"],
-                 "-f", f.name],
-                input=text.encode(), check=True, capture_output=True, timeout=30)
-            return Path(f.name).read_bytes()
-
-    def _play(self, audio_out: bytes):
-        try:
-            # OpenWebUI may return WAV or MP3
-            if audio_out[:4] == b"RIFF":
-                self.audio.play_wav_bytes(audio_out, self._stop_playback)
+                yield self._server_tts_pcm(text)
             else:
-                import subprocess, tempfile
-                with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as f:
-                    f.write(audio_out)
-                proc = subprocess.Popen(
-                    ["ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet", f.name])
-                while proc.poll() is None:
-                    if self._stop_playback.is_set():
-                        proc.terminate(); break
-                    time.sleep(0.05)
+                if self.tts_engine is None:
+                    raise RuntimeError("no piper engine for TTS fallback")
+                log.info("tts: falling back to piper")
+                yield from self.tts_engine.chunks(text)
+        except Exception:
+            log.exception("tts fallback failed")
+
+    def _play_tts(self, text: str):
+        """Consume TTS chunks and play them; stop_event cuts playback short."""
+        t0 = time.time()
+        first = True
+        try:
+            for pcm in self._tts_chunks(text):
+                if self._stop_playback.is_set():
+                    return
+                if first:
+                    log.info("tts: first audio after %.0f ms", (time.time() - t0) * 1000)
+                    first = False
+                self.audio.play_pcm(pcm, self._stop_playback)
         except Exception:
             log.exception("playback failed")
 
@@ -270,6 +279,8 @@ def main():
         assistant.leds.off()
         if assistant.health:
             assistant.health.stop()
+        if assistant.tts_engine:
+            assistant.tts_engine.close()
 
 
 if __name__ == "__main__":
