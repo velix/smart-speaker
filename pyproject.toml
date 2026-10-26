@@ -15,6 +15,7 @@ dependencies = [
     # Pi-only: these do not build/run off the Pi
     "spidev>=3.6; sys_platform == 'linux'",
     "RPi-GPIO>=0.7; sys_platform == 'linux'",
+    "lgpio>=1.2; sys_platform == 'linux'",
 ]
 
 [project.optional-dependencies]
