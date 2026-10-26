@@ -1,112 +1,65 @@
-"""Resident piper process: streams int16 PCM chunks as they are synthesized.
+"""Piper TTS via the maintained piper-tts Python API (OHF piper1-gpl).
 
-One piper process stays alive for the daemon's lifetime (no per-turn model
-load). Piper only streams at SENTENCE granularity, so the reply is split
-into sentences and fed line-by-line; a feeder thread synthesizes ahead of
-the player, which plays sentence N while N+1 is being generated.
-
-End-of-line detection: piper goes idle on stdout after finishing a line
-(--output_raw). A short idle gap after data marks the end of that sentence.
+PiperVoice.synthesize() natively yields one AudioChunk per sentence, so
+playback starts as soon as the FIRST sentence is synthesized while later
+sentences are still being generated. A feeder thread synthesizes ahead of
+the player through a queue; stop() makes the feeder abandon the rest
+(barge-in). No subprocess, no idle-gap heuristics.
 """
-import json
 import logging
-import os
 import queue
-import re
-import select
-import subprocess
 import threading
-import time
 
 log = logging.getLogger(__name__)
-
-_FIRST_AUDIO_TIMEOUT_S = 25.0   # per sentence: time to produce first samples
-_IDLE_GAP_S = 0.35              # idle gap that marks end of a sentence's audio
-_MAX_STREAM_S = 120.0           # safety cap per utterance
-
-_SENTENCE_RE = re.compile(r"(?<=[.!?])\s+")
-
-
-def split_sentences(text: str) -> list:
-    """Split reply into sentences (piper streams at this granularity)."""
-    return [s.strip() for s in _SENTENCE_RE.split(text) if s.strip()]
 
 
 class PiperEngine:
     def __init__(self, cfg: dict, convert_fn):
-        """cfg: {bin, voice}; convert_fn(pcm, src_rate, channels) -> playback PCM."""
-        self.bin = cfg.get("bin", "/opt/piper/piper/piper")
-        self.voice = cfg["voice"]
+        """cfg: {voice}; convert_fn(pcm, rate, channels) -> playback PCM.
+        (cfg may contain a legacy "bin" key — unused, the wheel provides it.)"""
+        self.voice_path = cfg["voice"]
         self.convert_fn = convert_fn
-        self._proc = None
-        self._rate = None
+        self._voice = None
         self._lock = threading.Lock()
-
-    def _sample_rate(self) -> int:
-        if self._rate is None:
-            with open(self.voice + ".json") as f:
-                self._rate = json.load(f)["audio"]["sample_rate"]
-        return self._rate
+        self._active_stop = None
 
     def _ensure(self):
         with self._lock:
-            if self._proc is None or self._proc.poll() is not None:
-                log.info("tts: starting resident piper (%s)", self.voice)
-                self._proc = subprocess.Popen(
-                    [self.bin, "-m", self.voice, "--output_raw"],
-                    stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                    stderr=subprocess.DEVNULL)
-            return self._proc
+            if self._voice is None:
+                from piper import PiperVoice
+                log.info("tts: loading piper voice %s", self.voice_path)
+                self._voice = PiperVoice.load(self.voice_path)
+            return self._voice
 
-    def _read_sentence(self, proc, fd, rate):
-        """Read raw PCM for one already-written line; ends on idle gap or EOF."""
-        got_any = False
-        idle = 0.0
-        while True:
-            r, _, _ = select.select([fd], [], [], 0.05)
-            if r:
-                data = os.read(fd, 8192)
-                if not data:
-                    if not got_any:
-                        raise RuntimeError("piper produced no audio (EOF)")
-                    return
-                got_any = True
-                idle = 0.0
-                yield self.convert_fn(data, rate, 1)
-            else:
-                idle += 0.05
-                if not got_any and idle > _FIRST_AUDIO_TIMEOUT_S:
-                    raise RuntimeError("piper produced no audio within timeout")
-                if got_any and idle >= _IDLE_GAP_S:
-                    return
+    @staticmethod
+    def _chunk_pcm(chunk) -> bytes:
+        pcm = getattr(chunk, "audio_int16_bytes", None)
+        if pcm is None:
+            import numpy as np
+            pcm = (chunk.audio_float_array * 32767.0).astype(np.int16).tobytes()
+        return pcm
 
     def chunks(self, text: str):
-        """Yield playback-rate PCM chunks for a whole reply, pipelined:
-        a feeder thread synthesizes sentences ahead of the consumer."""
+        """Yield playback-rate PCM chunks, synthesized ahead of the consumer."""
         q = queue.Queue()
+        stop = threading.Event()
 
         def feed():
             try:
-                proc = self._ensure()
-                rate = self._sample_rate()
-                fd = proc.stdout.fileno()
-                started = time.time()
-                with self._lock:                      # one synthesis at a time
-                    for sent in split_sentences(text) or [text]:
-                        proc.stdin.write((sent + "\n").encode())
-                        proc.stdin.flush()
-                        for chunk in self._read_sentence(proc, fd, rate):
-                            q.put(chunk)
-                        if time.time() - started > _MAX_STREAM_S:
-                            log.warning("tts: piper stream exceeded cap")
-                            return
-            except Exception as e:
-                if not self._killed:                 # barge-in kill is not an error
-                    log.exception("piper feeder failed: %s", e)
+                voice = self._ensure()
+                for chunk in voice.synthesize(text):
+                    if stop.is_set():
+                        break
+                    pcm = self._chunk_pcm(chunk)
+                    q.put(self.convert_fn(pcm, chunk.sample_rate, chunk.sample_channels))
+            except Exception:
+                if not stop.is_set():
+                    log.exception("piper synthesis failed")
             finally:
                 q.put(None)
 
-        self._killed = False
+        with self._lock:
+            self._active_stop = stop
         threading.Thread(target=feed, daemon=True).start()
         while True:
             item = q.get()
@@ -117,21 +70,17 @@ class PiperEngine:
     def prewarm(self):
         """Load the model at daemon start so the first turn doesn't pay for it."""
         try:
-            for _ in self.chunks("Ready."):
+            for _ in self._ensure().synthesize("Ready."):
                 pass
         except Exception:
             log.exception("piper prewarm failed")
 
     def stop(self):
-        """Kill the resident process (barge-in / errors); respawned lazily."""
-        self._killed = True
+        """Abandon the active synthesis (barge-in). The model stays loaded."""
         with self._lock:
-            if self._proc is not None:
-                try:
-                    self._proc.kill()
-                except Exception:
-                    pass
-                self._proc = None
+            stop = self._active_stop
+        if stop is not None:
+            stop.set()
 
     def close(self):
         self.stop()

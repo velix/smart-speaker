@@ -30,8 +30,7 @@ button:
 tts:
   engine: "piper"          # "piper" (on-Pi, local) or "openwebui" (server-side)
   piper:
-    bin: "/opt/piper/piper/piper"
-    voice: "/opt/piper/voices/en_US-lessac-low.onnx"
+    voice: "/opt/piper/voices/en_US-lessac-low.onnx"  # engine = piper-tts wheel (aarch64)
 
 health:
   enabled: true      # GET /health JSON endpoint for uptime-kuma
