@@ -106,8 +106,10 @@ and API key. LED test: `uv run python -m voice_assistant.leds test`.
 The daemon supports two TTS engines, selected by `tts.engine` in config.yaml:
 
 - `"piper"` — **local, on the Pi** (default): fast, offline, no external API.
-  One-time setup on the Pi: `./scripts/setup-pi-tts.sh` (installs to
-  `/opt/piper`, voice `en_US-lessac-medium`).
+  Uses the maintained **piper-tts** wheel (OHF piper1-gpl, aarch64) via its
+  Python API — streaming one chunk per sentence, model prewarmed at daemon
+  start. Voice model installed by `./scripts/setup-pi-tts.sh` (the rhasspy
+  binary it also downloads is only a standalone test tool now).
 - `"openwebui"` — server-side via OpenWebUI `/api/v1/audio/speech`.
 
 If the primary engine fails, the daemon automatically falls back to the
