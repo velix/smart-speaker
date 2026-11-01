@@ -46,7 +46,15 @@ def record(n: int):
         subprocess.run(["sudo", "systemctl", "stop", SERVICE], check=True)
     try:
         cfg = load_config(str(Path(__file__).resolve().parent.parent / "config.yaml"))
-        audio = AudioIO(cfg["audio"])
+        audio = None
+        for _ in range(20):          # the daemon's streams take a moment to close
+            try:
+                audio = AudioIO(cfg["audio"])
+                break
+            except Exception:
+                time.sleep(0.5)
+        if audio is None:
+            raise RuntimeError("capture device not available after stopping the daemon")
         recorder = UtteranceRecorder(audio, cfg["vad"])
         CORPUS.mkdir(exist_ok=True)
         i, skip = 1, 0
