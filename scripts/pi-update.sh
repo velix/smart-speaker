@@ -4,6 +4,10 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
+# uv installs per-user (~/.local/bin), which non-interactive SSH sessions
+# don't have on PATH — add it so `ssh pi-speaker './scripts/pi-update.sh'` works.
+export PATH="$HOME/.local/bin:$PATH"
+
 git pull --ff-only
 uv sync
 
