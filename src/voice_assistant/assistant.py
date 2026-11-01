@@ -24,18 +24,21 @@ from .wake_word import WakeWordDetector
 
 log = logging.getLogger("assistant")
 
-# Markdown emphasis, emoji, and text emoticons — not speakable; strip before TTS.
+# Markdown emphasis, emoji, text emoticons, and citation markers — not
+# speakable; strip before TTS.
 _MARKDOWN = re.compile(r"(?<!\w)(\*+|_+|`+)(?=\w)(.+?)(?<=\w)\1(?!\w)", re.DOTALL)
 _EMOJI = re.compile("[\U0001F000-\U0001FAFF\u2600-\u27BF\u2B00-\u2BFF\uFE0F\u200D]")
 _EMOTICON = re.compile(r"(?<!\S)[:;=8xX][-o\^'.]?[)DPp3/\\|(\]](?!\S)")
+_CITATION = re.compile(r"\s*\[\d+(?:,\s*\d+)*\]")   # knowledge-tool sources: [1] [1,2]
 
 
 def clean_for_tts(text: str) -> str:
-    """Strip non-verbal content (markdown, emoji, emoticons) for speech."""
+    """Strip non-verbal content (markdown, emoji, emoticons, citations) for speech."""
     text = _MARKDOWN.sub(r"\2", text)          # *word* **word** _word_ `word`
     text = text.replace("*", " ").replace("_", " ").replace("`", " ")
     text = _EMOTICON.sub(" ", text)
     text = _EMOJI.sub("", text)
+    text = _CITATION.sub("", text)             # [1], [2, 3] — never spoken
     return re.sub(r"\s+", " ", text).strip()
 
 

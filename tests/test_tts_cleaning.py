@@ -30,6 +30,17 @@ def test_normal_text_untouched():
         "Hi there! I can help with info, reminders, or questions."
 
 
+def test_citation_markers_removed():
+    assert clean_for_tts("RTX 4070 with 12 GB VRAM [1]. Boot note [2].") == \
+        "RTX 4070 with 12 GB VRAM. Boot note."
+    assert clean_for_tts("See [1, 2] for details.") == "See for details."
+
+
+def test_word_brackets_survive_citation_strip():
+    assert clean_for_tts("You live in [city] now, right?") == \
+        "You live in [city] now, right?"
+
+
 def test_parentheses_survive():
     # "(", ")" alone must not be eaten by the emoticon pattern
     assert clean_for_tts("Call me (on my phone) later.") == "Call me (on my phone) later."
