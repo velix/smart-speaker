@@ -62,6 +62,14 @@ def _engines():
 def synth():
     engines = _engines()
     CORPUS.mkdir(exist_ok=True)
+    # warm both engines so measurements reflect steady-state, not model loads
+    for name, eng in engines.items():
+        try:
+            for _ in eng.chunks("Warm up."):
+                pass
+            print(f"{name}: warmed")
+        except Exception as e:
+            print(f"{name}: WARMUP FAILED: {str(e)[:120]}")
     rows = []
     for i, text in enumerate(SAMPLE_REPLIES, 1):
         row = {"n": i, "text": text}

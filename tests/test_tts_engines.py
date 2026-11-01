@@ -115,3 +115,23 @@ def test_openai_tts_streams_and_strips_header():
     assert body["model"] == "kokoro"
     assert body["voice"] == "af_heart"
     assert body["response_format"] == "wav"
+
+
+def test_openai_tts_odd_byte_chunks_survive():
+    """Network chunks split at arbitrary byte boundaries; the engine must
+    carry the odd byte so every yielded chunk is whole int16 samples."""
+    pcm = bytes(range(10))                        # 10 bytes = 5 samples
+    header = b"RIFF\xff\xff\xff\xffWAVEfmt " + b"\x00" * 24 + b"data\xff\xff\xff\xff"
+
+    def handler(request):
+        # stream in awkward sizes: header split, odd splits of the PCM
+        parts = [header[:10], header[10:], pcm[:3], pcm[3:4], pcm[4:9], pcm[9:]]
+        return httpx.Response(200, content=iter(parts))
+
+    eng = OpenAITTS({"base_url": "http://tts.test/v1"}, convert_fn=lambda p, r, c: p)
+    eng.client = httpx.Client(base_url="http://tts.test/v1",
+                              transport=httpx.MockTransport(handler))
+    out = b"".join(list(eng.chunks("hello")))
+    assert out == pcm
+    for chunk in eng.chunks("hello"):
+        assert len(chunk) % 2 == 0

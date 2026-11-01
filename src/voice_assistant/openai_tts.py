@@ -30,11 +30,14 @@ class OpenAITTS:
             timeout=httpx.Timeout(60.0, connect=5.0))
 
     def chunks(self, text: str):
-        """Yield playback-rate PCM chunks, streamed from the endpoint."""
+        """Yield playback-rate PCM chunks, streamed from the endpoint.
+        Network chunks split at arbitrary byte boundaries — carry the odd
+        byte so consumers always get whole int16 samples."""
         payload = {"model": self.model, "voice": self.voice,
                    "input": text, "response_format": "wav"}
         header_skipped = False
         buf = b""
+        carry = b""
         with self.client.stream("POST", "/audio/speech", json=payload) as r:
             if r.status_code != 200:
                 raise RuntimeError(f"tts endpoint {r.status_code}: {r.read()[:200]}")
@@ -46,9 +49,12 @@ class OpenAITTS:
                         continue
                     buf = buf[idx + 8:]      # skip RIFF header up to data chunk
                     header_skipped = True
-                if buf:
-                    yield self.convert_fn(buf, self.sample_rate, 1)
-                    buf = b""
+                pcm = carry + buf
+                buf = b""
+                even = len(pcm) - (len(pcm) % 2)
+                if even:
+                    yield self.convert_fn(pcm[:even], self.sample_rate, 1)
+                carry = pcm[even:]
 
     def close(self):
         self.client.close()
