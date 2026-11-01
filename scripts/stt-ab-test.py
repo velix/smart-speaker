@@ -35,6 +35,24 @@ CORPUS = Path(__file__).resolve().parent.parent / "stt-corpus"
 SERVICE = "voice-assistant"
 
 
+def _wait_mic_free(cfg, timeout=20):
+    """Poll the ALSA capture subdevice until the daemon has released it.
+    Must happen BEFORE any sounddevice use — PortAudio caches its device
+    list at first enumeration per process and permanently excludes devices
+    that are busy at that moment."""
+    card = cfg["audio"]["card"]
+    status = Path(f"/proc/asound/card{card}/pcm0c/sub0/status")
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            if "closed" in status.read_text():
+                return
+        except FileNotFoundError:
+            return
+        time.sleep(0.25)
+    raise RuntimeError(f"mic still busy after {timeout}s: {status.read_text()}")
+
+
 def record(n: int):
     from voice_assistant.assistant import load_config
     from voice_assistant.audio_io import AudioIO
@@ -46,15 +64,8 @@ def record(n: int):
         subprocess.run(["sudo", "systemctl", "stop", SERVICE], check=True)
     try:
         cfg = load_config(str(Path(__file__).resolve().parent.parent / "config.yaml"))
-        audio = None
-        for _ in range(20):          # the daemon's streams take a moment to close
-            try:
-                audio = AudioIO(cfg["audio"])
-                break
-            except Exception:
-                time.sleep(0.5)
-        if audio is None:
-            raise RuntimeError("capture device not available after stopping the daemon")
+        _wait_mic_free(cfg)
+        audio = AudioIO(cfg["audio"])
         recorder = UtteranceRecorder(audio, cfg["vad"])
         CORPUS.mkdir(exist_ok=True)
         i, skip = 1, 0
