@@ -36,7 +36,7 @@ button:
   enabled: true      # GPIO17 push-to-talk fallback / barge-in
 
 tts:
-  engine: "piper"          # "piper" (on-Pi) | "openai" (GPU endpoint, e.g. Kokoro-FastAPI) | "openwebui"
+  engine: "openai"         # A/B validated 2026-11-01: Kokoro GPU ~0.95s first-audio + clearly better voice; piper = fallback
   fallback: "piper"         # used if the primary engine fails
   openai:
     base_url: "http://192.168.2.139:8880/v1"   # Kokoro-FastAPI on gpu-machine (deploy pending)
