@@ -17,6 +17,12 @@ class OllamaSTT:
         self.base = cfg["base_url"].rstrip("/")
         self.model = cfg["model"]
         self.prompt = cfg.get("prompt", "Transcribe this audio. Reply with only the transcript.")
+        # Domain vocabulary: biases the LLM transcriber toward the user's
+        # proper nouns (hostnames, projects, names) that generic ASR mangles.
+        hints = cfg.get("hints") or []
+        if hints:
+            self.prompt += (" The speaker may use these proper nouns, verbatim: "
+                            + ", ".join(hints) + ".")
         self.keep_alive = cfg.get("keep_alive", "30m")
         self.client = httpx.Client(
             base_url=self.base, timeout=httpx.Timeout(60.0, connect=5.0))

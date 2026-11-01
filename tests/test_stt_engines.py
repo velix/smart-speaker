@@ -49,6 +49,15 @@ def test_keep_alive_configurable():
     assert stt.payload(b"x")["keep_alive"] == "60m"
 
 
+def test_vocabulary_hints_in_prompt():
+    stt = OllamaSTT({"base_url": "http://gpu:11434/v1", "model": "m",
+                     "hints": ["fitlen", "Ollama"]})
+    parts = stt.payload(b"x")["messages"][0]["content"]
+    assert "verbatim: fitlen, Ollama" in parts[0]["text"]
+    no_hints = OllamaSTT({"base_url": "http://gpu:11434/v1", "model": "m"})
+    assert "verbatim" not in no_hints.prompt
+
+
 def test_transcribe_dispatch():
     va = object.__new__(VoiceAssistant)
 

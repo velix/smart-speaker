@@ -29,6 +29,10 @@ stt:
     base_url: "http://192.168.2.139:11434/v1"
     model: "gemma4:e4b"   # audio-capable chat model, already on gpu-machine; warm ~0.3s, cold load ~43s
     keep_alive: "30m"     # keep the model in VRAM between turns — avoids the cold-load hit
+    # Vocabulary hints: proper nouns gemma4 should recognize verbatim.
+    # Add anything the recognizer mangles — hostnames, projects, people.
+    hints: [fitlen, littlewyse, prox, proxmox, gpu-machine, app_server, unraid,
+            Ollama, Kokoro, jarvis, Velisarios, deytes]
     # prompt: "Transcribe this audio. Reply with only the transcript."
 
 vad:
