@@ -36,5 +36,7 @@ class OllamaSTT:
 
     def transcribe(self, wav_bytes: bytes) -> str:
         r = self.client.post("/chat/completions", json=self.payload(wav_bytes))
-        r.raise_for_status()
+        if r.status_code != 200:
+            # Ollama returns e.g. 404 {"error":{"message":"model 'x' not found"}}
+            raise RuntimeError(f"ollama STT {r.status_code}: {r.text[:200]}")
         return r.json()["choices"][0]["message"]["content"].strip()
