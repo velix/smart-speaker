@@ -1,7 +1,10 @@
-"""TTS engine selection and fallback in VoiceAssistant._tts_chunks."""
+"""TTS engine dispatch, fallback chain, and OpenAI-TTS streaming."""
 import threading
 
+import httpx
+
 from voice_assistant.assistant import VoiceAssistant
+from voice_assistant.openai_tts import OpenAITTS
 
 
 class FakeAudio:
@@ -15,7 +18,6 @@ class FakeAudio:
 class FakePiper:
     def __init__(self, fail=False):
         self.fail = fail
-        self.stopped = False
 
     def chunks(self, text):
         if self.fail:
@@ -23,8 +25,15 @@ class FakePiper:
         yield b"P1"
         yield b"P2"
 
-    def stop(self):
-        self.stopped = True
+
+class FakeOpenAI:
+    def __init__(self, fail=False):
+        self.fail = fail
+
+    def chunks(self, text):
+        if self.fail:
+            raise RuntimeError("server tts down")
+        yield b"O1"
 
 
 class FakeClient:
@@ -34,46 +43,75 @@ class FakeClient:
 
     def synthesize(self, text):
         if self.fail:
-            raise RuntimeError("server tts down")
+            raise RuntimeError("openwebui tts down")
         return self.data
 
 
-def _bare(cfg, client=None, engine=None):
+def _bare(cfg, client=None, piper=None, openai=None):
     va = object.__new__(VoiceAssistant)
     va.cfg = cfg
     va.client = client
-    va.tts_engine = engine
+    va.tts_piper = piper
+    va.tts_openai = openai
     va.audio = FakeAudio()
     va._stop_playback = threading.Event()
     return va
 
 
-def test_piper_engine_primary_streams_chunks():
-    va = _bare({"tts": {"engine": "piper"}}, engine=FakePiper())
+def test_piper_primary_streams_chunks():
+    va = _bare({"tts": {"engine": "piper", "fallback": "openwebui"}},
+               client=FakeClient(), piper=FakePiper())
     assert list(va._tts_chunks("hello")) == [b"P1", b"P2"]
 
 
 def test_piper_failure_falls_back_to_openwebui():
-    va = _bare({"tts": {"engine": "piper"}}, client=FakeClient(), engine=FakePiper(fail=True))
+    va = _bare({"tts": {"engine": "piper", "fallback": "openwebui"}},
+               client=FakeClient(), piper=FakePiper(fail=True))
     assert list(va._tts_chunks("hello")) == [b"WAV2PCM:RIFFxxxx"]
 
 
-def test_piper_failure_without_client_yields_nothing():
-    va = _bare({"tts": {"engine": "piper"}}, client=None, engine=FakePiper(fail=True))
-    assert list(va._tts_chunks("hello")) == []
+def test_openai_primary_streams_chunks():
+    va = _bare({"tts": {"engine": "openai", "fallback": "piper"}},
+               openai=FakeOpenAI())
+    assert list(va._tts_chunks("hello")) == [b"O1"]
 
 
-def test_openwebui_failure_falls_back_to_piper():
-    va = _bare({"tts": {"engine": "openwebui"}}, client=FakeClient(fail=True),
-               engine=FakePiper())
+def test_openai_failure_falls_back_to_piper():
+    va = _bare({"tts": {"engine": "openai", "fallback": "piper"}},
+               piper=FakePiper(), openai=FakeOpenAI(fail=True))
     assert list(va._tts_chunks("hello")) == [b"P1", b"P2"]
 
 
-def test_openwebui_mp3_response_converted():
-    va = _bare({"tts": {"engine": "openwebui"}}, client=FakeClient(data=b"ID3mp3data"))
+def test_openwebui_primary_and_fallback():
+    va = _bare({"tts": {"engine": "openwebui", "fallback": "piper"}},
+               client=FakeClient(data=b"ID3mp3data"), piper=FakePiper())
     assert list(va._tts_chunks("hello")) == [b"MP32PCM:ID3mp3data"]
 
 
-def test_default_engine_is_openwebui():
-    va = _bare({}, client=FakeClient())
-    assert list(va._tts_chunks("hello")) == [b"WAV2PCM:RIFFxxxx"]
+def test_unknown_engine_falls_back():
+    va = _bare({"tts": {"engine": "magic", "fallback": "piper"}}, piper=FakePiper())
+    assert list(va._tts_chunks("hello")) == [b"P1", b"P2"]   # primary fails, fallback piper runs
+
+
+def _mock_tts_client(payload_out, captured):
+    def handler(request):
+        captured.append(request.read().decode())
+        wav_header = b"RIFF\xff\xff\xff\xffWAVEfmt " + b"\x00" * 24 + b"data\xff\xff\xff\xff"
+        return httpx.Response(200, content=wav_header + payload_out)
+    return httpx.Client(base_url="http://tts.test/v1",
+                        transport=httpx.MockTransport(handler))
+
+
+def test_openai_tts_streams_and_strips_header():
+    captured = []
+    eng = OpenAITTS({"base_url": "http://tts.test/v1", "model": "kokoro",
+                     "voice": "af_heart", "sample_rate": 24000},
+                    convert_fn=lambda p, r, c: p)
+    eng.client = _mock_tts_client(b"\x01\x02\x03\x04", captured)
+    out = list(eng.chunks("hello"))
+    assert out == [b"\x01\x02\x03\x04"]          # RIFF header stripped
+    import json
+    body = json.loads(captured[0])
+    assert body["model"] == "kokoro"
+    assert body["voice"] == "af_heart"
+    assert body["response_format"] == "wav"

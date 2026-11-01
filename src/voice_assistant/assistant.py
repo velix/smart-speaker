@@ -56,12 +56,15 @@ class VoiceAssistant:
         self._started = time.time()
         self._turn_count = 0
         self.health = None
-        self.tts_engine = None
+        self.tts_piper = None
+        self.tts_openai = None
+        convert = lambda pcm, rate, ch: AudioIO._convert_pcm(pcm, rate, ch, self.audio.rate)
         if cfg.get("tts", {}).get("piper", {}).get("voice"):
             from .piper_engine import PiperEngine
-            self.tts_engine = PiperEngine(
-                cfg["tts"]["piper"],
-                lambda pcm, rate, ch: AudioIO._convert_pcm(pcm, rate, ch, self.audio.rate))
+            self.tts_piper = PiperEngine(cfg["tts"]["piper"], convert)
+        if cfg.get("tts", {}).get("openai", {}).get("base_url"):
+            from .openai_tts import OpenAITTS
+            self.tts_openai = OpenAITTS(cfg["tts"]["openai"], convert)
 
     # ---------- STT ----------
 
@@ -148,8 +151,8 @@ class VoiceAssistant:
             if self.wake.detected():
                 log.info("playback: barge-in via %s", self.wake.last_trigger())
                 self._stop_playback.set()
-                if self.tts_engine:
-                    self.tts_engine.stop()   # kill resident synthesis mid-stream
+                if self.tts_piper:
+                    self.tts_piper.stop()   # kill resident synthesis mid-stream
             time.sleep(0.05)
         log.info("playback: done — turn %d complete", self._turn_count)
         self.leds.off()
@@ -161,33 +164,37 @@ class VoiceAssistant:
         data = self.client.synthesize(text)
         return self.audio.wav_to_pcm(data) if data[:4] == b"RIFF" else self.audio.mp3_to_pcm(data)
 
+    def _engine_chunks(self, engine: str, text: str):
+        if engine == "piper":
+            if self.tts_piper is None:
+                raise RuntimeError("piper voice not configured")
+            yield from self.tts_piper.chunks(text)
+        elif engine == "openai":
+            if self.tts_openai is None:
+                raise RuntimeError("openai tts not configured")
+            yield from self.tts_openai.chunks(text)
+        elif engine == "openwebui":
+            yield self._server_tts_pcm(text)
+        else:
+            raise ValueError(f"unknown tts engine: {engine}")
+
     def _tts_chunks(self, text: str):
         """Yield playback-rate PCM chunks from the configured engine,
-        falling back to the other engine on failure."""
-        engine = self.cfg.get("tts", {}).get("engine", "openwebui")
+        falling back to tts.fallback (default: piper) on failure."""
+        primary = self.cfg.get("tts", {}).get("engine", "openwebui")
+        fallback = self.cfg.get("tts", {}).get("fallback", "piper")
         try:
-            if engine == "piper":
-                if self.tts_engine is None:
-                    raise RuntimeError("piper voice not configured")
-                yield from self.tts_engine.chunks(text)
-                return
-            yield self._server_tts_pcm(text)
+            yield from self._engine_chunks(primary, text)
             return
         except Exception:
-            if self._stop_playback.is_set():     # barge-in kill — not a failure
+            if self._stop_playback.is_set():     # barge-in — not a failure
                 return
-            log.exception("%s TTS failed", engine)
+            log.exception("%s TTS failed", primary)
+        if fallback == primary:
+            return
         try:
-            if engine == "piper":
-                if self.client is None:
-                    raise RuntimeError("no openwebui client for TTS fallback")
-                log.info("tts: falling back to openwebui")
-                yield self._server_tts_pcm(text)
-            else:
-                if self.tts_engine is None:
-                    raise RuntimeError("no piper engine for TTS fallback")
-                log.info("tts: falling back to piper")
-                yield from self.tts_engine.chunks(text)
+            log.info("tts: falling back to %s", fallback)
+            yield from self._engine_chunks(fallback, text)
         except Exception:
             log.exception("tts fallback failed")
 
@@ -237,8 +244,8 @@ class VoiceAssistant:
             from .health import HealthServer
             self.health = HealthServer(h.get("port", 8310), self._health_status)
             self.health.start()
-        if self.tts_engine:
-            threading.Thread(target=self.tts_engine.prewarm, daemon=True).start()
+        if self.tts_piper and self.cfg.get("tts", {}).get("engine") == "piper":
+            threading.Thread(target=self.tts_piper.prewarm, daemon=True).start()
         if self.wake.enabled or self.wake._button:
             while True:
                 if self.wake.detected():
@@ -304,8 +311,10 @@ def main():
         assistant.leds.off()
         if assistant.health:
             assistant.health.stop()
-        if assistant.tts_engine:
-            assistant.tts_engine.close()
+        if assistant.tts_piper:
+            assistant.tts_piper.close()
+        if assistant.tts_openai:
+            assistant.tts_openai.close()
 
 
 if __name__ == "__main__":
