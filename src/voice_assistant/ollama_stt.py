@@ -17,6 +17,7 @@ class OllamaSTT:
         self.base = cfg["base_url"].rstrip("/")
         self.model = cfg["model"]
         self.prompt = cfg.get("prompt", "Transcribe this audio. Reply with only the transcript.")
+        self.keep_alive = cfg.get("keep_alive", "30m")
         self.client = httpx.Client(
             base_url=self.base, timeout=httpx.Timeout(60.0, connect=5.0))
 
@@ -24,6 +25,7 @@ class OllamaSTT:
         audio_b64 = base64.b64encode(wav_bytes).decode()
         return {
             "model": self.model,
+            "keep_alive": self.keep_alive,
             "messages": [{
                 "role": "user",
                 "content": [

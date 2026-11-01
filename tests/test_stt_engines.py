@@ -30,10 +30,11 @@ def test_unknown_engine_raises():
 
 
 def test_voxtral_payload_shape():
-    stt = OllamaSTT({"base_url": "http://gpu:11434/v1", "model": "voxtral-mini"})
+    stt = OllamaSTT({"base_url": "http://gpu:11434/v1", "model": "gemma4:e4b"})
     wav = b"RIFFxxxx" * 100
     p = stt.payload(wav)
-    assert p["model"] == "voxtral-mini"
+    assert p["model"] == "gemma4:e4b"
+    assert p["keep_alive"] == "30m"
     msg = p["messages"][0]
     parts = msg["content"]
     assert msg["role"] == "user"
@@ -41,6 +42,11 @@ def test_voxtral_payload_shape():
     assert parts[1]["type"] == "input_audio"
     assert parts[1]["input_audio"]["format"] == "wav"
     assert base64.b64decode(parts[1]["input_audio"]["data"]) == wav
+
+
+def test_keep_alive_configurable():
+    stt = OllamaSTT({"base_url": "http://gpu:11434/v1", "model": "m", "keep_alive": "60m"})
+    assert stt.payload(b"x")["keep_alive"] == "60m"
 
 
 def test_transcribe_dispatch():

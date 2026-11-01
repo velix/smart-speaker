@@ -7,7 +7,9 @@ comparison. Switching the live daemon between A and B afterwards is a
 one-line config change (stt.engine in config.yaml).
 
 A = openwebui  (current production: whisper on app_server via OpenWebUI)
-B = ollama     (proposed: voxtral on gpu-machine via Ollama chat API)
+B = ollama     (proposed: audio-capable model on gpu-machine via Ollama chat API;
+                voxtral is NOT distributed on Ollama — gemma4:e4b/12b are the
+                audio-capable models, already pulled on gpu-machine)
 
 Usage (on the Pi, from /opt/voice-assistant):
 
