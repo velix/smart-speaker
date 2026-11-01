@@ -50,8 +50,10 @@ class VoiceAssistant:
         self.client = OpenWebUIClient(cfg["openwebui"]) if full_pipeline else None
         self.stt = self._make_stt(cfg) if full_pipeline else None
         self.system_prompt = cfg["server"]["system_prompt"]
+        # false when an OpenWebUI workspace model owns the prompt/personality
+        self.send_system = cfg.get("server", {}).get("send_system_prompt", True)
         self.max_turns = cfg["history"]["max_turns"]
-        self.messages = [{"role": "system", "content": self.system_prompt}]
+        self.messages = [{"role": "system", "content": self.system_prompt}] if self.send_system else []
         self._stop_playback = threading.Event()
         self._started = time.time()
         self._turn_count = 0
@@ -129,8 +131,11 @@ class VoiceAssistant:
             reply = self.client.chat(self.messages)
             log.info("llm: reply=%r", reply)
             self.messages.append({"role": "assistant", "content": reply})
-            if len(self.messages) > 2 * self.max_turns + 1:
-                self.messages = [self.messages[0]] + self.messages[-2 * self.max_turns:]
+            limit = 2 * self.max_turns
+            if self.send_system and len(self.messages) > limit + 1:
+                self.messages = [self.messages[0]] + self.messages[-limit:]
+            elif not self.send_system and len(self.messages) > limit:
+                self.messages = self.messages[-limit:]
 
             spoken = clean_for_tts(reply)
             log.info("tts: cleaned text=%r", spoken)
