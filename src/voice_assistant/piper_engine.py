@@ -13,7 +13,7 @@ import threading
 
 log = logging.getLogger(__name__)
 
-_SENTENCE_RE = __import__("re").compile(r"(?<=[.!?])\s+")
+_SENTENCE_RE = re.compile(r"(?<=[.!?;:])\s+")
 
 
 def split_sentences(text: str) -> list:
