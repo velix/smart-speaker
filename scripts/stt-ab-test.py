@@ -35,12 +35,11 @@ CORPUS = Path(__file__).resolve().parent.parent / "stt-corpus"
 SERVICE = "voice-assistant"
 
 
-def _wait_mic_free(cfg, timeout=20):
+def _wait_mic_free(card, timeout=20):
     """Poll the ALSA capture subdevice until the daemon has released it.
-    Must happen BEFORE any sounddevice use — PortAudio caches its device
-    list at first enumeration per process and permanently excludes devices
+    Must happen BEFORE importing sounddevice — PortAudio enumerates devices
+    once at Pa_Initialize (import time) and permanently excludes devices
     that are busy at that moment."""
-    card = cfg["audio"]["card"]
     status = Path(f"/proc/asound/card{card}/pcm0c/sub0/status")
     deadline = time.time() + timeout
     while time.time() < deadline:
@@ -54,17 +53,23 @@ def _wait_mic_free(cfg, timeout=20):
 
 
 def record(n: int):
+    import yaml  # plain config read — no package imports before the mic is free
+    with open(Path(__file__).resolve().parent.parent / "config.yaml") as f:
+        card = yaml.safe_load(f)["audio"]["card"]
+
+    active = subprocess.run(["systemctl", "is-active", "--quiet", SERVICE]).returncode == 0
+    if active:
+        print(f"stopping {SERVICE} for exclusive mic access...", flush=True)
+        subprocess.run(["sudo", "systemctl", "stop", SERVICE], check=True)
+    _wait_mic_free(card)
+
+    # imports happen only now: Pa_Initialize sees a free capture device
     from voice_assistant.assistant import load_config
     from voice_assistant.audio_io import AudioIO
     from voice_assistant.vad import UtteranceRecorder
 
-    active = subprocess.run(["systemctl", "is-active", "--quiet", SERVICE]).returncode == 0
-    if active:
-        print(f"stopping {SERVICE} for exclusive mic access...")
-        subprocess.run(["sudo", "systemctl", "stop", SERVICE], check=True)
     try:
         cfg = load_config(str(Path(__file__).resolve().parent.parent / "config.yaml"))
-        _wait_mic_free(cfg)
         audio = AudioIO(cfg["audio"])
         recorder = UtteranceRecorder(audio, cfg["vad"])
         CORPUS.mkdir(exist_ok=True)
