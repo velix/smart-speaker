@@ -102,6 +102,7 @@ class VoiceAssistant:
             self.wake.resume()     # live again for wake-word barge-in during playback
         if wav is None:
             log.info("capture: no speech detected — turn ended")
+            self.leds.off()
             return
         with wave.open(io.BytesIO(wav)) as wf:
             self._last_capture_s = wf.getnframes() / wf.getframerate()
@@ -123,6 +124,7 @@ class VoiceAssistant:
             log.info("stt: transcript=%r", text)
             if not text:
                 log.info("stt: empty transcript — turn ended")
+                self.leds.off()
                 return
 
             self.messages.append({"role": "user", "content": text})
