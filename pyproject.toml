@@ -22,9 +22,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# openwakeword requires onnxruntime, which has no 32-bit armv7 wheels —
-# it cannot install on the Pi 3B (bullseye 32-bit). Wake-word engine for the
-# Pi will be Porcupine or a tflite-based approach instead.
+# Dev convenience for non-Pi machines (macOS/x86): openwakeword is excluded
+# there by the platform marker above. Not needed on the Pi — plain uv sync
+# installs it on aarch64 linux.
 wakeword = ["openwakeword>=0.6.0"]
 
 [project.scripts]

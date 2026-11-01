@@ -1,7 +1,8 @@
-# TTS findings — OpenWebUI + Mistral Voxtral (2026-10-26)
+# TTS findings — OpenWebUI + Mistral Voxtral (2026-10-26; setup updated 2026-11-01)
 
-Why the smart speaker currently uses on-Pi Piper TTS instead of the OpenWebUI
-gateway, and how to switch back to Mistral later if wanted.
+Why the speaker does not use the OpenWebUI gateway for TTS, what Mistral
+Voxtral would need if we ever want it, and how the current engine stack
+(Kokoro on the GPU, local piper as fallback) was chosen.
 
 ## What we found empirically
 
@@ -56,24 +57,26 @@ dropped support for script-based datasets
 OpenWebUI's main branch on GitHub (still present as of 2026-10-26) — upgrading
 to 0.12.x does not fix it.
 
-## Current setup (chosen)
+## Current setup (chosen 2026-11-01)
 
-TTS runs **locally on the Pi** with piper (see README "TTS" and
-`scripts/setup-pi-tts.sh`): fast, offline, no voice cloning. The daemon's
-`tts.engine` config selects the primary engine; the other engine is the
-automatic fallback.
+TTS is **Kokoro-FastAPI on the GPU box** (`tts.engine: "openai"` in
+config.yaml; deployment in `docs/kokoro-tts-deploy.md`): clearly better voice
+than piper in blind listening, first audio ~0.16 s with the client-side
+sentence pipeline. **Local piper on the Pi is the automatic fallback**
+(`tts.fallback: "piper"`) — the speaker keeps talking when the GPU box or
+the network is down. The OpenWebUI TTS path remains a config option
+(`tts.engine: "openwebui"`) but needs a working server-side engine (see
+above for why the built-in one is broken).
 
-### Piper binary provenance (important)
+### Piper provenance (updated for 64-bit)
 
-The installed binary is from the **archived** `rhasspy/piper` repo (Nov 2023
-release, `piper_linux_armv7l.tar.gz`) — the only piper release that ever
-shipped a ready-made 32-bit armv7 binary. The maintained successor
-`OHF-Voice/piper1-gpl` (v1.8.0, Sep 2026, Open Home Foundation) publishes
-wheels only for aarch64/x86_64/macOS/Windows — **no armv7** — and building it
-from source on the Pi needs onnxruntime, which has no armv7 builds either
-(same root cause as openwakeword). Consequence: the Pi's piper is frozen at
-the 2023 binary (self-contained, bundles onnxruntime 1.14.1; works at
-RTF ~1 with the lessac-low voice, but receives no updates). Moving the Pi to
-64-bit Raspberry Pi OS would unlock the maintained piper wheels *and*
-openwakeword. Voices remain at the maintained `rhasspy/piper-voices`
-HF dataset.
+The Pi now runs 64-bit Raspberry Pi OS, so piper comes from the maintained
+`piper-tts` wheel (OHF piper1-gpl, v1.8.0) via `uv sync` — no frozen 2023
+binary anymore. The historical context: on the old 32-bit bullseye system
+the only piper that ever shipped an armv7 binary was the archived
+`rhasspy/piper` repo (Nov 2023), and the maintained successor publishes no
+armv7 wheels (same root cause as openwakeword's missing armv7 onnxruntime —
+both were reasons for the 64-bit migration). `scripts/setup-pi-tts.sh`
+still downloads a standalone piper binary + the voice model for manual
+testing; the daemon itself uses the wheel's Python API. Voices come from
+the maintained `rhasspy/piper-voices` HF dataset.

@@ -1,8 +1,29 @@
 # voice-assistant
 
-Smart speaker daemon for **Raspberry Pi 3 Model B + ReSpeaker 2-Mic HAT (KS0314)**.
+Smart speaker daemon for **Raspberry Pi 3 Model B + ReSpeaker 2-Mic HAT (KS0314)**,
+running 64-bit Raspberry Pi OS (trixie).
 Audio in/out via the HAT (mic capture, 3.5 mm jack to a powered speaker).
-Backend: remote OpenWebUI (STT → Ollama → TTS).
+
+The Pi stays thin: wake word, VAD capture, and playback are local; everything
+intelligent runs on the homelab — STT and TTS on Ollama/Kokoro (GPU box),
+reasoning/personality/knowledge behind OpenWebUI.
+
+Pipeline: **openWakeWord (local) → webrtcvad → STT → LLM → TTS → playback**, with
+barge-in (wake word or the HAT button stops playback) and a health endpoint for
+uptime-kuma.
+
+Current engine choices (all swappable in `config.yaml`, A/B validated
+2026-11-01/02 — see `KNOWLEDGE.md` for the measurements):
+
+| Stage | Engine | Where | Measured |
+|---|---|---|---|
+| Wake word | openWakeWord `hey_jarvis` (onnx) | Pi | RTF ~0.5 (real-time) |
+| STT | Ollama `gemma4:e4b` via `input_audio` chat + vocabulary `hints` | GPU box | ~0.3–0.6 s |
+| LLM | OpenWebUI workspace model `jarvis` (server-side chat) | OpenWebUI | ~1–3 s (tool turns) |
+| TTS | Kokoro-FastAPI (`af_heart`), clause-pipelined | GPU box (GPU) | first audio ~0.16 s |
+| TTS fallback | piper (maintained `piper-tts` wheel) | Pi (local) | ~1.7 s, automatic |
+
+End-to-end: roughly **1.5–2 s** from end of speech to first audio.
 
 Managed with [uv](https://docs.astral.sh/uv/).
 
@@ -10,52 +31,44 @@ Managed with [uv](https://docs.astral.sh/uv/).
 
 ```
 pyproject.toml            # deps, console script, build config
-config.yaml               # runtime configuration (edit on the Pi)
-voice-assistant.service   # systemd unit (install after phases 1–5 pass)
+config.yaml               # runtime configuration (all engine switches)
+voice-assistant.service   # systemd unit
 src/voice_assistant/
     assistant.py          # main daemon: wake/button → VAD → STT → LLM → TTS → playback
-    audio_io.py           # mic capture (stereo → mono) and playback via sounddevice
+    audio_io.py           # mic capture (stereo → mono), playback, PCM/WAV/MP3 conversion
     vad.py                # webrtcvad end-of-speech detection
     wake_word.py          # openWakeWord + GPIO17 button trigger
-    openwebui_client.py   # OpenWebUI HTTP client (STT, chat, TTS)
-    leds.py               # status LEDs (optional)
+    ollama_stt.py         # STT via Ollama chat models (gemma4) + reply compression
+    openwebui_client.py   # OpenWebUI client: server-side chat (Path A), STT/TTS fallbacks
+    openai_tts.py         # TTS via OpenAI-compatible /v1/audio/speech (Kokoro-FastAPI)
+    piper_engine.py       # local piper TTS (fallback engine), sentence-streamed
+    leds.py               # APA102 status LEDs (optional)
+    health.py             # GET /health JSON endpoint
     interfaces/           # vendored seeed mic_hat apa102.py + pixels.py
-tests/                    # smoke tests (no hardware needed)
+docs/                     # runbooks + experiment notes (see below)
+scripts/                  # pi-update.sh, setup-pi-tts.sh, STT/TTS A/B harnesses
+tests/                    # unit tests (no hardware needed)
 ```
 
 ## Development (any machine)
 
 ```bash
 uv sync                          # creates .venv, installs deps + the package (editable)
-uv run pytest                    # smoke tests
+uv run pytest                    # unit tests
 uv run voice-assistant --help
-uv sync --extra wakeword         # also install openwakeword (Mac/dev only — see note)
 ```
 
-`spidev` and `RPi-GPIO` are installed only on Linux (`sys_platform == 'linux'`),
-so the project syncs and tests fine on macOS; LEDs just disable themselves.
-
-**Wake-word note:** `openwakeword` needs `onnxruntime`, which has **no 32-bit
-armv7 wheels** — so it cannot install on the Pi 3B (Raspbian 11, 32-bit).
-It lives in the optional `wakeword` extra. On the Pi the daemon logs a clear
-error and runs button-triggered; a Pi-compatible wake-word engine
-(Porcupine or tflite) is a follow-up.
+`spidev`, `RPi-GPIO`, `lgpio`, `openwakeword`, and `piper-tts` install only on
+Linux (`sys_platform`/`platform_machine` markers), so the project syncs and
+tests fine on macOS; LEDs and the wake-word model just disable themselves.
+On the aarch64 Pi, `uv sync` installs everything — wake word included.
 
 ## Deploy on the Pi (git pull workflow)
 
 The Pi runs a checkout of this repo at `/opt/voice-assistant` and pulls from
-GitHub — no manual file copying.
-
-First-time setup on the Pi:
-
-```bash
-sudo apt update
-sudo apt install -y gcc python3-dev libffi-dev pkg-config libportaudio2 ffmpeg
-sudo mkdir -p /opt/voice-assistant && sudo chown $USER /opt/voice-assistant
-git clone https://github.com/velix/smart-speaker.git /opt/voice-assistant
-cd /opt/voice-assistant
-uv sync
-```
+GitHub — no manual file copying. First-time setup:
+**`docs/pi-setup-from-scratch.md`** is the validated, reproducible runbook
+(OS flash, `wm8960-soundcard` overlay, mixer gates, deploy, systemd).
 
 After pushing from your dev machine, update the Pi with:
 
@@ -68,59 +81,68 @@ After pushing from your dev machine, update the Pi with:
 `config.yaml` ships with empty `openwebui.base_url` / `api_key`. Provide the
 real values on the Pi in **either** (or both) of:
 
-1. **`/opt/voice-assistant/config.local.yaml`** (gitignored, overlays config.yaml):
-
-   ```yaml
-   openwebui:
-     base_url: "http://192.168.2.x:3000"
-     api_key: "sk-..."
-   ```
-
+1. **`/opt/voice-assistant/config.local.yaml`** (gitignored, overlays config.yaml)
 2. **`/etc/voice-assistant.env`** (loaded by the systemd unit):
-
-   ```
-   OPENWEBUI_BASE_URL=http://192.168.2.x:3000
-   OPENWEBUI_API_KEY=sk-...
-   ```
+   `OPENWEBUI_BASE_URL=...`, `OPENWEBUI_API_KEY=...`
 
 Env vars win over the local file; the local file wins over config.yaml.
 
-> Note: `uv` installs its own Python 3.11 on the Pi (system Python 3.9 is too
-> old). `openwakeword` is NOT installed on the Pi — onnxruntime has no 32-bit
-> armv7 wheels; the daemon runs button-triggered until a Pi-compatible
-> wake-word engine is added.
+## STT
 
-Find your ALSA card (the Pi onboard jack is card 0, the HAT is usually 1 or 2):
+Selected by `stt.engine` in config.yaml:
 
-```bash
-arecord -l && aplay -l
-arecord -D plughw:1,0 -f S16_LE -r 16000 -d 3 test.wav
-aplay -D plughw:1,0 test.wav
-```
+- `"ollama"` (**current**) — any audio-capable Ollama chat model via the
+  OpenAI-compatible `/v1/chat/completions` with an `input_audio` part
+  (`gemma4:e4b`: warm ~0.3 s, better accuracy than whisper-base in our A/B).
+  Because the transcriber is an LLM, `stt.ollama.hints` biases it toward your
+  proper nouns (hostnames, projects, names) that generic ASR mangles.
+  `keep_alive` keeps the model in VRAM between turns.
+  The same warm model doubles as the **reply compressor** for over-long LLM
+  replies (`server.max_reply_words`) — via Ollama's native `/api/chat` with
+  `think: false`, because the OpenAI-compatible endpoint ignores it and gemma4
+  otherwise burns 200–600 thinking tokens.
+- `"openwebui"` — server-side Whisper (fallback; ~1.9 s with `base`).
 
-Set that card number in `config.yaml` (`audio.card`), plus your OpenWebUI URL
-and API key. LED test: `uv run python -m voice_assistant.leds test`.
+## LLM (OpenWebUI server-side chat)
+
+Replies come from an OpenWebUI **workspace model** (e.g. `jarvis`), which owns
+the personality and Knowledge-collection RAG — edit it in the OpenWebUI UI, no
+redeploy. The client uses the documented "server-side tool calling" path
+(`chat_id` + message `id` + `stream: true` + `session_id`): **without these,
+OpenWebUI runs no tools server-side and knowledge silently never triggers.**
+Every voice turn is appended to one persistent sidebar chat (id kept in
+`.speaker-chat.json`, gitignored) — a readable log of what jarvis heard and
+answered.
+
+OpenTerminal is supported but **opt-in** (`openwebui.terminal_id` in
+config.yaml): API callers must send `terminal_id` explicitly. Leave it unset
+unless you accept voice-triggered shell execution.
 
 ## TTS
 
-The daemon supports two TTS engines, selected by `tts.engine` in config.yaml:
+Selected by `tts.engine` in config.yaml:
 
-- `"piper"` — **local, on the Pi** (default): fast, offline, no external API.
-  Uses the maintained **piper-tts** wheel (OHF piper1-gpl, aarch64) via its
-  Python API — streaming one chunk per sentence, model prewarmed at daemon
-  start. Voice model installed by `./scripts/setup-pi-tts.sh` (the rhasspy
-  binary it also downloads is only a standalone test tool now).
-- `"openwebui"` — server-side via OpenWebUI `/api/v1/audio/speech`.
+- `"openai"` (**current**) — any OpenAI-compatible `/v1/audio/speech` endpoint;
+  today Kokoro-FastAPI on the GPU box (deploy notes:
+  `docs/kokoro-tts-deploy.md`). The endpoint synthesizes a whole request
+  before streaming, so the client pipelines **sentence by sentence** on a
+  feeder thread — playback starts on the first sentence while the rest is
+  still being generated. Network chunks split at arbitrary byte boundaries;
+  odd bytes are carried so playback always gets whole int16 samples.
+- `"piper"` — local on the Pi, maintained `piper-tts` (OHF piper1-gpl) wheel,
+  streaming one chunk per sentence. Voice installed by
+  `./scripts/setup-pi-tts.sh`.
+- `"openwebui"` — server-side via OpenWebUI (requires a working TTS engine
+  there; see `docs/tts-notes.md` for why the built-in one is broken).
 
-If the primary engine fails, the daemon automatically falls back to the
-other one (when available). For why the OpenWebUI built-in/Mistral TTS
-options were problematic, see `docs/tts-notes.md`.
+If the primary engine fails, the daemon falls back to `tts.fallback`
+(default: `piper` — i.e. the speaker keeps talking when the GPU box is down).
 
 ## Health endpoint (uptime-kuma)
 
-The daemon serves `GET http://<pi>:8310/health` when `health.enabled` is true
-in config.yaml. It returns **200** while both the mic capture stream and the
-playback stream are active, **503** otherwise. Example response:
+`GET http://<pi>:8310/health` when `health.enabled` is true. **200** while both
+the mic capture stream and the playback stream are active, **503** otherwise.
+Example response:
 
 ```json
 {
@@ -128,37 +150,53 @@ playback stream are active, **503** otherwise. Example response:
   "uptime_s": 3600,
   "capture_mic": "ready",
   "output_speaker": "ready",
-  "trigger": {"wake_word": false, "button": true},
-  "tts_engine": "piper",
+  "trigger": {"wake_word": true, "button": true},
+  "tts_engine": "openai",
+  "stt_engine": "ollama",
   "turns": 12
 }
 ```
 
-In uptime-kuma add an **HTTP(s)** monitor for
-`http://192.168.2.145:8310/health`. Note: "output_speaker" reflects the
-playback stream state on the HAT's jack — the WM8960 does not expose
-physical plug detection, so a disconnected cable downstream of the jack
-cannot be detected.
+In uptime-kuma add an **HTTP(s)** monitor for `http://192.168.2.145:8310/health`.
+Note: "output_speaker" reflects the playback stream state on the HAT's jack —
+the WM8960 does not expose physical plug detection, so a disconnected cable
+downstream of the jack cannot be detected.
 
-## Bring-up phases
+## Bring-up phases (fresh hardware)
 
-Run each phase's test before moving to the next:
+`docs/pi-setup-from-scratch.md` covers all of this as one runbook; the short
+version:
 
-1. **Audio loopback** — the `arecord`/`aplay` test above through the speaker.
-2. **API smoke test** — `curl -s -H "Authorization: Bearer $KEY" http://YOUR_SERVER:3000/api/models | head`
-3. **Capture + VAD** — `uv run voice-assistant --phase 3`: press the HAT button,
-   speak; check `/tmp/utterance.wav` plays back.
+1. **Audio loopback** — `arecord`/`aplay` through the HAT (after the overlay +
+   mixer gates; see the runbook — the input boost switches default OFF and the
+   mics record silence without them).
+2. **API smoke test** — `curl -H "Authorization: Bearer $KEY" .../api/models`.
+3. **Capture + VAD** — `uv run voice-assistant --phase 3`: press the HAT
+   button, speak; check `/tmp/utterance.wav` plays back.
 4. **Full pipeline** — `uv run voice-assistant` (button-triggered first: set
    `wake_word.enabled: false`).
-5. **Wake word** — set `wake_word.enabled: true`, model `hey_jarvis` (bundled).
+5. **Wake word** — `wake_word.enabled: true`, model `hey_jarvis` (bundled).
    Raise `threshold` if it false-triggers.
-6. **systemd** — `sudo cp voice-assistant.service /etc/systemd/system/ && sudo systemctl enable --now voice-assistant`
-   (only after phases 1–5 pass).
+6. **systemd** — `sudo cp voice-assistant.service /etc/systemd/system/ && sudo
+   systemctl enable --now voice-assistant`.
 
 ## Gotchas
 
-- TTS output must be **16 kHz**; if your OpenWebUI TTS returns 22.05/24 kHz,
-  resample or let the MP3/ffplay path handle it.
-- If ALSA reports "device busy", stop any `arecord`/`aplay` first.
-- The power undervoltage fix is still outstanding — do it before enabling
-  systemd autostart, or boot-throttle may delay startup.
+- sounddevice matches **PortAudio device names** (`hw:N,0`), not ALSA strings
+  (`plughw:N,0`); set `audio.card` to the HAT's card number.
+- PortAudio caches its device list at import time and **drops busy devices
+  entirely** — stop `arecord`/`aplay` before starting the daemon.
+- RPi.GPIO edge detection is broken on 64-bit kernels; the daemon uses
+  `lgpio` via gpiozero.
+- If OpenWebUI knowledge/tools seem dead from the API: you're not on the
+  server-side chat path (see "LLM" above — `session_id` is the switch).
+- Process management over SSH: `pkill -f` patterns match the SSH session's
+  own command line — use `systemctl` (see AGENTS.md).
+
+## Docs
+
+- `docs/pi-setup-from-scratch.md` — full fresh-Pi runbook (overlay, mixer, deploy)
+- `docs/migration-64bit-checklist.md` — the 32→64-bit migration, as executed
+- `docs/kokoro-tts-deploy.md` — Kokoro-FastAPI GPU deployment (compose + gotchas)
+- `docs/tts-notes.md` — why OpenWebUI/Mistral TTS didn't work; engine survey
+- `KNOWLEDGE.md` — append-only engineering log: measurements, A/B results, root causes

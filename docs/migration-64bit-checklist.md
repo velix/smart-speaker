@@ -1,5 +1,10 @@
 # Migration checklist — rpi-mic to 64-bit Raspberry Pi OS
 
+> **COMPLETED 2026-10-26.** Kept as the record of how the migration actually
+> went (section 4 documents the driver resolution, which diverged from the
+> plan). The distilled, reproducible procedure now lives in
+> `docs/pi-setup-from-scratch.md`.
+
 Goal: move the smart speaker from Raspbian 11 **bullseye 32-bit (armv7)** to
 **64-bit Raspberry Pi OS (aarch64)** to unlock openwakeword (onnxruntime) and
 maintained piper wheels. The Pi is wiped during this migration — SSH access,
@@ -83,8 +88,9 @@ configured" — wm8960 node loses its `clocks` property). The working solution:
 - [ ] `git clone https://github.com/velix/smart-speaker.git /opt/voice-assistant`
 - [ ] Restore secrets:
       `scp ~/projects/smart-speaker-backup/config.local.yaml pi-speaker:/opt/voice-assistant/`
-- [ ] `cd /opt/voice-assistant && uv sync --extra wakeword`
-      (64-bit now allows openwakeword — this is the whole point)
+- [ ] `cd /opt/voice-assistant && uv sync`
+      (openwakeword is now a default dep via the `linux + aarch64` marker —
+      no extra needed; the `--extra wakeword` shown here is historical)
 - [ ] `./scripts/setup-pi-tts.sh` — downloads the **aarch64** piper binary +
       voice, writes `/tmp/piper-test.wav`
 - [ ] Play it: `aplay -D plughw:2,0 /tmp/piper-test.wav`

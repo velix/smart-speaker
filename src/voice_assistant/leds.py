@@ -25,9 +25,6 @@ class Leds:
     def wakeup(self):   # triggered: rising warm light
         if self.ok: _pixels.wakeup()
 
-    def listen(self):
-        if self.ok: _pixels.listen()
-
     def think(self):
         if self.ok: _pixels.think()
 
@@ -41,5 +38,5 @@ class Leds:
 if __name__ == "__main__" and len(sys.argv) > 1 and sys.argv[1] == "test":
     import time
     leds = Leds()
-    for fn in (leds.wakeup, leds.listen, leds.think, leds.speak, leds.off):
+    for fn in (leds.wakeup, leds.think, leds.speak, leds.off):
         fn(); time.sleep(2)

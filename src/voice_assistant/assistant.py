@@ -111,9 +111,9 @@ class VoiceAssistant:
             self.leds.off()
             return
         with wave.open(io.BytesIO(wav)) as wf:
-            self._last_capture_s = wf.getnframes() / wf.getframerate()
+            capture_s = wf.getnframes() / wf.getframerate()
         log.info("capture: %.1f s utterance captured (%d bytes)",
-                 self._last_capture_s, len(wav))
+                 capture_s, len(wav))
 
         if not self.full:
             out = Path("/tmp/utterance.wav")

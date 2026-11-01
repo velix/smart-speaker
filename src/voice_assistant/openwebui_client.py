@@ -94,41 +94,38 @@ class OpenWebUIClient:
         chat_id, tail_id = self._ensure_chat(user_msg, assistant_id, ts)
         if tail_id:
             user_msg["parentId"] = tail_id     # keep the tree linear
-        try:
-            payload = {
-                "model": self.model,
-                "messages": messages,
-                "stream": True,                      # required: tools only run on the stream path
-                "chat_id": chat_id,
-                "id": assistant_id,
-                "user_message": user_msg,
-                "session_id": self._session_id,     # THE built-in-tools switch
-                **({"terminal_id": self.terminal_id} if self.terminal_id else {}),
-                "background_tasks": {"title_generation": False, "tags_generation": False,
-                                     "follow_up_generation": False},
-                "features": {"code_interpreter": False, "web_search": False,
-                             "image_generation": False, "memory": False},
-                "variables": {"{{CURRENT_DATETIME}}": datetime.now().isoformat(timespec="seconds"),
-                             "{{USER_LANGUAGE}}": self.language},
-            }
-            r = self.client.post("/api/chat/completions", json=payload)
-            r.raise_for_status()
-            deadline = time.time() + self.server_chat_timeout
-            while time.time() < deadline:
-                t = self.client.get(f"/api/tasks/chat/{chat_id}")
-                t.raise_for_status()
-                if not t.json().get("task_ids"):
-                    break
-                time.sleep(0.4)
-            c = self.client.get(f"/api/v1/chats/{chat_id}")
-            c.raise_for_status()
-            msg = c.json()["chat"]["history"]["messages"].get(assistant_id, {})
-            content = (msg.get("content") or "").strip()
-            if not content:
-                raise RuntimeError("empty assistant message in chat record")
-            return content
-        except Exception:
-            raise
+        payload = {
+            "model": self.model,
+            "messages": messages,
+            "stream": True,                      # required: tools only run on the stream path
+            "chat_id": chat_id,
+            "id": assistant_id,
+            "user_message": user_msg,
+            "session_id": self._session_id,     # THE built-in-tools switch
+            **({"terminal_id": self.terminal_id} if self.terminal_id else {}),
+            "background_tasks": {"title_generation": False, "tags_generation": False,
+                                 "follow_up_generation": False},
+            "features": {"code_interpreter": False, "web_search": False,
+                         "image_generation": False, "memory": False},
+            "variables": {"{{CURRENT_DATETIME}}": datetime.now().isoformat(timespec="seconds"),
+                         "{{USER_LANGUAGE}}": self.language},
+        }
+        r = self.client.post("/api/chat/completions", json=payload)
+        r.raise_for_status()
+        deadline = time.time() + self.server_chat_timeout
+        while time.time() < deadline:
+            t = self.client.get(f"/api/tasks/chat/{chat_id}")
+            t.raise_for_status()
+            if not t.json().get("task_ids"):
+                break
+            time.sleep(0.4)
+        c = self.client.get(f"/api/v1/chats/{chat_id}")
+        c.raise_for_status()
+        msg = c.json()["chat"]["history"]["messages"].get(assistant_id, {})
+        content = (msg.get("content") or "").strip()
+        if not content:
+            raise RuntimeError("empty assistant message in chat record")
+        return content
 
     def _ensure_chat(self, user_msg: dict, assistant_id: str, ts: int):
         """Return (chat_id, tail_message_id). Reuses the persistent chat;

@@ -50,4 +50,4 @@ def test_leds_degrade_gracefully():
     leds = Leds()
     # on non-Pi hosts spidev is absent, so this must be False, not raise
     assert leds.ok is False
-    leds.wakeup(); leds.listen(); leds.think(); leds.speak(); leds.off()
+    leds.wakeup(); leds.think(); leds.speak(); leds.off()
