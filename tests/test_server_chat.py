@@ -10,10 +10,7 @@ def _client(state_path, **cfg):
     base = {"base_url": "http://owui.test", "api_key": "k", "model": "jarvis",
             "chat_state_file": str(state_path)}
     base.update(cfg)
-    return OpenWebUIClient(base)
-
-
-def _handler(captured, state):
+    return OpenWebUIClient(base)def _handler(captured, state):
     def handler(request):
         path = request.url.path
         if path == "/api/v1/chats/new":
@@ -72,6 +69,22 @@ def test_missing_chat_is_recreated(tmp_path):
     assert out == "The answer."
     assert captured["chat_new"]["chat"]["title"]        # a fresh chat was created
     assert c._chat_id == "chat-1"                      # and stored for next time
+
+
+def test_terminal_id_opt_in(tmp_path):
+    """terminal_id only sent when configured — the docs require it explicitly
+    for API callers, and it is security-sensitive (voice-triggered shell)."""
+    captured, state = {}, {}
+    c = _client(tmp_path / "c1.json", terminal_id="term-123")
+    c.client = httpx.Client(base_url=c.base, transport=httpx.MockTransport(_handler(captured, state)))
+    c.chat([{"role": "user", "content": "hi"}])
+    assert captured["completion"]["terminal_id"] == "term-123"
+
+    captured2, state2 = {}, {}
+    c2 = _client(tmp_path / "c2.json")
+    c2.client = httpx.Client(base_url=c2.base, transport=httpx.MockTransport(_handler(captured2, state2)))
+    c2.chat([{"role": "user", "content": "hi"}])
+    assert "terminal_id" not in captured2["completion"]
 
 
 def test_server_chat_failure_falls_back_to_plain_completion(tmp_path):

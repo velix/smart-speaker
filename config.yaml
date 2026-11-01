@@ -9,6 +9,10 @@ openwebui:
                        # OpenWebUI executes tools server-side — without it, workspace-model
                        # knowledge silently never triggers (docs: Server-Side Tool Calling)
   server_chat_timeout: 90   # seconds to wait for the server-side tool loop
+  # OpenTerminal for voice turns — SECURITY-SENSITIVE: anyone within earshot
+  # can trigger shell commands on the terminal server's machine. Opt-in:
+  # set to the terminal id from OpenWebUI (Workspace → Terminals) to enable.
+  # terminal_id: "3e4c0103-2a9f-4a50-a373-d66828b9ceb2"
   language: "en"
 
 audio:

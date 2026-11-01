@@ -27,6 +27,10 @@ class OpenWebUIClient:
         # workspace-model knowledge would silently never trigger.
         self.server_chat = cfg.get("server_chat", True)
         self.server_chat_timeout = cfg.get("server_chat_timeout", 90)
+        # OpenTerminal: API callers must send terminal_id explicitly — the
+        # model's UI-configured terminal is NOT applied to API requests
+        # (docs: Server-Side Tool Calling). Empty = no terminal tools.
+        self.terminal_id = cfg.get("terminal_id", "") or None
         # One persistent chat (kept in the OpenWebUI sidebar for reference);
         # the id survives daemon restarts via this state file.
         self._state_file = cfg.get("chat_state_file", ".speaker-chat.json")
@@ -99,6 +103,7 @@ class OpenWebUIClient:
                 "id": assistant_id,
                 "user_message": user_msg,
                 "session_id": self._session_id,     # THE built-in-tools switch
+                **({"terminal_id": self.terminal_id} if self.terminal_id else {}),
                 "background_tasks": {"title_generation": False, "tags_generation": False,
                                      "follow_up_generation": False},
                 "features": {"code_interpreter": False, "web_search": False,
