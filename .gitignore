@@ -19,3 +19,4 @@ stt-corpus/
 
 # local secrets — keep a config.example.yaml instead
 config.local.yaml
+.speaker-chat.json

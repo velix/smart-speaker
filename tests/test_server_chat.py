@@ -6,54 +6,76 @@ import httpx
 from voice_assistant.openwebui_client import OpenWebUIClient
 
 
-def _client(**cfg):
-    base = {"base_url": "http://owui.test", "api_key": "k", "model": "jarvis"}
+def _client(state_path, **cfg):
+    base = {"base_url": "http://owui.test", "api_key": "k", "model": "jarvis",
+            "chat_state_file": str(state_path)}
     base.update(cfg)
     return OpenWebUIClient(base)
 
 
-def test_server_chat_full_loop():
-    c = _client()
-    state = {"pending": True, "deleted": False}
-    captured = {}
-
+def _handler(captured, state):
     def handler(request):
         path = request.url.path
         if path == "/api/v1/chats/new":
             captured["chat_new"] = json.loads(request.read())
+            state["chat_id"] = "chat-1"
+            state["missing"] = False           # the new chat now exists
             return httpx.Response(200, json={"id": "chat-1"})
+        if path.startswith("/api/v1/chats/") and request.method == "GET":
+            if state.get("missing"):
+                return httpx.Response(404, json={"detail": "not found"})
+            aid = captured["completion"]["id"]
+            return httpx.Response(200, json={"chat": {"history": {
+                "currentId": aid,
+                "messages": {aid: {"id": aid, "content": "The answer."}}}}})
         if path == "/api/chat/completions":
             captured["completion"] = json.loads(request.read())
             return httpx.Response(200, json={"status": True, "task_ids": ["t1"]})
         if path.startswith("/api/tasks/chat/"):
-            state["pending"] = False
-            return httpx.Response(200, json={"task_ids": [] if not state["pending"] else ["t1"]})
-        if path.startswith("/api/v1/chats/"):
-            if request.method == "DELETE":
-                state["deleted"] = True
-                return httpx.Response(200, json=True)
-            aid = captured["completion"]["id"]
-            return httpx.Response(200, json={"chat": {"history": {"messages": {
-                aid: {"id": aid, "content": "The answer."}}}}})
+            return httpx.Response(200, json={"task_ids": []})
         return httpx.Response(404)
+    return handler
 
-    c.client = httpx.Client(base_url=c.base, transport=httpx.MockTransport(handler))
+
+def test_full_loop_and_chat_persistence(tmp_path):
+    captured, state = {}, {}
+    c = _client(tmp_path / "chat.json")
+    c.client = httpx.Client(base_url=c.base, transport=httpx.MockTransport(_handler(captured, state)))
+
+    out = c.chat([{"role": "user", "content": "turn one?"}])
+    assert out == "The answer."
+    assert state["chat_id"] == "chat-1"
+    assert json.loads((tmp_path / "chat.json").read_text())["chat_id"] == "chat-1"
+
+    # second turn: same chat reused (no new /api/v1/chats/new call)
+    c.chat([{"role": "user", "content": "turn two?"}])
+    assert "chat_new" in captured                      # still only from turn one
+    p = captured["completion"]
+    assert p["chat_id"] == "chat-1"
+    assert p["messages"] == [{"role": "user", "content": "turn two?"}]
+    assert p["user_message"]["content"] == "turn two?"
+    assert p["stream"] is True                         # tools only run on the stream path
+    assert p["session_id"].startswith("speaker-")      # the built-in-tools switch
+    assert p["background_tasks"]["title_generation"] is False
+
+
+def test_missing_chat_is_recreated(tmp_path):
+    captured, state = {}, {}
+    c = _client(tmp_path / "chat.json")
+    # simulate a stored chat id that no longer exists on the server
+    (tmp_path / "chat.json").write_text(json.dumps({"chat_id": "gone"}))
+    c._chat_id = "gone"
+    state["missing"] = True
+    c.client = httpx.Client(base_url=c.base, transport=httpx.MockTransport(_handler(captured, state)))
+
     out = c.chat([{"role": "user", "content": "hello?"}])
     assert out == "The answer."
-    assert state["deleted"]                      # throwaway chat cleaned up
-
-    p = captured["completion"]
-    assert p["stream"] is True                   # tools only run on the stream path
-    assert p["chat_id"] == "chat-1"
-    assert p["session_id"].startswith("speaker-")  # the built-in-tools switch
-    assert p["messages"] == [{"role": "user", "content": "hello?"}]
-    assert p["background_tasks"]["title_generation"] is False
-    assert p["user_message"]["id"]               # caller-generated user message
-    assert captured["chat_new"]["chat"]["history"]["messages"]  # chat pre-created
+    assert captured["chat_new"]["chat"]["title"]        # a fresh chat was created
+    assert c._chat_id == "chat-1"                      # and stored for next time
 
 
-def test_server_chat_failure_falls_back_to_plain_completion():
-    c = _client()
+def test_server_chat_failure_falls_back_to_plain_completion(tmp_path):
+    c = _client(tmp_path / "chat.json")
     captured = {}
 
     def handler(request):
@@ -67,11 +89,11 @@ def test_server_chat_failure_falls_back_to_plain_completion():
     c.client = httpx.Client(base_url=c.base, transport=httpx.MockTransport(handler))
     out = c.chat([{"role": "user", "content": "hi"}])
     assert out == "plain reply"
-    assert captured["plain"]["stream"] is False   # fallback = old plain mode
+    assert captured["plain"]["stream"] is False         # fallback = old plain mode
 
 
-def test_server_chat_disabled_uses_plain_mode():
-    c = _client(server_chat=False)
+def test_server_chat_disabled_uses_plain_mode(tmp_path):
+    c = _client(tmp_path / "chat.json", server_chat=False)
     captured = {}
 
     def handler(request):

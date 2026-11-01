@@ -1,8 +1,10 @@
 """HTTP client for OpenWebUI: STT, chat, TTS. Persistent connection, warmed on wake."""
+import json
 import logging
 import time
 import uuid
 from datetime import datetime
+from pathlib import Path
 
 import httpx
 
@@ -25,7 +27,24 @@ class OpenWebUIClient:
         # workspace-model knowledge would silently never trigger.
         self.server_chat = cfg.get("server_chat", True)
         self.server_chat_timeout = cfg.get("server_chat_timeout", 90)
+        # One persistent chat (kept in the OpenWebUI sidebar for reference);
+        # the id survives daemon restarts via this state file.
+        self._state_file = cfg.get("chat_state_file", ".speaker-chat.json")
+        self._chat_id = self._load_chat_id()
         self._session_id = f"speaker-{uuid.uuid4()}"
+
+    def _load_chat_id(self):
+        try:
+            return json.loads(Path(self._state_file).read_text())["chat_id"]
+        except Exception:
+            return None
+
+    def _store_chat_id(self, chat_id):
+        self._chat_id = chat_id
+        try:
+            Path(self._state_file).write_text(json.dumps({"chat_id": chat_id}))
+        except Exception:
+            log.warning("could not persist chat id to %s", self._state_file)
 
     def warm(self):
         """Fire on wake to pre-open TCP connection while the user speaks."""
@@ -62,13 +81,15 @@ class OpenWebUIClient:
     def _server_chat(self, messages: list) -> str:
         """chat_id + id + stream + session_id → OpenWebUI executes the model's
         tool calls (knowledge lookup etc.) server-side; we poll the task and
-        read the final answer from a throwaway chat record."""
+        read the answer from the persistent chat record."""
         user_id, assistant_id = str(uuid.uuid4()), str(uuid.uuid4())
         ts = int(time.time())
         user_msg = {"id": user_id, "role": "user", "content": messages[-1]["content"],
                     "parentId": None, "childrenIds": [assistant_id],
                     "timestamp": ts, "models": [self.model]}
-        chat_id = self._create_chat(user_msg, assistant_id, ts)
+        chat_id, tail_id = self._ensure_chat(user_msg, assistant_id, ts)
+        if tail_id:
+            user_msg["parentId"] = tail_id     # keep the tree linear
         try:
             payload = {
                 "model": self.model,
@@ -101,11 +122,22 @@ class OpenWebUIClient:
             if not content:
                 raise RuntimeError("empty assistant message in chat record")
             return content
-        finally:
-            try:
-                self.client.delete(f"/api/v1/chats/{chat_id}")
-            except Exception:
-                log.warning("could not delete throwaway chat %s", chat_id)
+        except Exception:
+            raise
+
+    def _ensure_chat(self, user_msg: dict, assistant_id: str, ts: int):
+        """Return (chat_id, tail_message_id). Reuses the persistent chat;
+        creates a fresh one if the stored id no longer exists."""
+        if self._chat_id:
+            r = self.client.get(f"/api/v1/chats/{self._chat_id}")
+            if r.status_code == 200:
+                history = r.json()["chat"]["history"]
+                return self._chat_id, history.get("currentId")
+            log.warning("stored chat %s not found (%s) — creating a new one",
+                        self._chat_id, r.status_code)
+        chat_id = self._create_chat(user_msg, assistant_id, ts)
+        self._store_chat_id(chat_id)
+        return chat_id, None
 
     def _create_chat(self, user_msg: dict, assistant_id: str, ts: int) -> str:
         history = {
