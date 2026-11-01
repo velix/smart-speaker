@@ -68,15 +68,18 @@ def record(n: int):
     print("now run:  uv run python scripts/stt-ab-test.py compare")
 
 
-def compare():
+def compare(model: str = None):
     from voice_assistant.assistant import load_config
     from voice_assistant.openwebui_client import OpenWebUIClient
     from voice_assistant.ollama_stt import OllamaSTT
 
     cfg = load_config(str(Path(__file__).resolve().parent.parent / "config.yaml"))
+    b_cfg = dict(cfg["stt"]["ollama"])
+    if model:
+        b_cfg["model"] = model      # e.g. --model gemma4:e4b (audio-capable chat models)
     engines = {
         "A openwebui": OpenWebUIClient(cfg["openwebui"]),
-        "B ollama": OllamaSTT(cfg["stt"]["ollama"]),
+        "B ollama": OllamaSTT(b_cfg),
     }
     files = sorted(CORPUS.glob("*.wav"))
     if not files:
@@ -127,12 +130,13 @@ def main():
     sub = ap.add_subparsers(dest="cmd", required=True)
     sub.add_parser("record").add_argument("--n", type=int, default=8,
                                           help="number of utterances to record")
-    sub.add_parser("compare")
+    sub.add_parser("compare").add_argument("--model", default=None,
+                                            help="override the B ollama model (e.g. gemma4:e4b)")
     args = ap.parse_args()
     if args.cmd == "record":
         record(args.n)
     else:
-        compare()
+        compare(args.model)
 
 
 if __name__ == "__main__":
