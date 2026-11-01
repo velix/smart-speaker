@@ -37,6 +37,13 @@ def test_markdown_list_bullets_removed():
     assert clean_for_tts("real-time audio") == "real-time audio"  # hyphens survive
 
 
+def test_horizontal_rules_and_arrows_removed():
+    assert clean_for_tts("Here is the current state. --- Now the plan. --- Done.") == \
+        "Here is the current state. Now the plan. Done."
+    assert clean_for_tts("ISP modem → Telia router.") == "ISP modem to Telia router."
+    assert clean_for_tts("A - B mapping") == "A B mapping"  # single dash bullet still stripped
+
+
 def test_citation_markers_removed():
     assert clean_for_tts("RTX 4070 with 12 GB VRAM [1]. Boot note [2].") == \
         "RTX 4070 with 12 GB VRAM. Boot note."

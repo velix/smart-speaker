@@ -40,6 +40,8 @@ def clean_for_tts(text: str) -> str:
     text = _EMOJI.sub("", text)
     text = _CITATION.sub("", text)             # [1], [2, 3] — never spoken
     text = re.sub(r"(?:^|\s)-\s", " ", text)    # markdown list bullets
+    text = re.sub(r"\s*-{3,}\s*", " ", text)     # horizontal rules (---)
+    text = text.replace("→", " to ").replace("=>", " to ").replace("←", " from ")
     return re.sub(r"\s+", " ", text).strip()
 
 
