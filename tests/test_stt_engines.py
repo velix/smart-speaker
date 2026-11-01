@@ -58,6 +58,26 @@ def test_vocabulary_hints_in_prompt():
     assert "verbatim" not in no_hints.prompt
 
 
+def test_compress_reply_payload():
+    stt = OllamaSTT({"base_url": "http://gpu:11434/v1", "model": "gemma4:e4b"})
+
+    class FakeResponse:
+        status_code = 200
+        def json(self):
+            return {"choices": [{"message": {"content": "Fitlen is your Fitlet2 mini-PC."}}]}
+
+    captured = {}
+    def fake_post(path, json=None):
+        captured["payload"] = json
+        return FakeResponse()
+
+    stt.client = type("C", (), {"post": staticmethod(fake_post)})()
+    out = stt.compress_reply("very long reply " * 50)
+    assert out == "Fitlen is your Fitlet2 mini-PC."
+    assert captured["payload"]["model"] == "gemma4:e4b"
+    assert "voice assistant" in captured["payload"]["messages"][0]["content"]
+
+
 def test_transcribe_dispatch():
     va = object.__new__(VoiceAssistant)
 

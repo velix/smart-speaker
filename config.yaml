@@ -66,3 +66,7 @@ server:
   # The OpenWebUI workspace model "jarvis" owns the prompt/personality —
   # the daemon sends conversation turns only.
   send_system_prompt: false
+  # Mechanical reply discipline: the workspace prompt holds for plain replies
+  # but drifts on knowledge-tool turns (RAG chunks drown it) — over-budget
+  # replies are compressed for speech by the warm STT model on the GPU.
+  max_reply_words: 45   # 0 disables

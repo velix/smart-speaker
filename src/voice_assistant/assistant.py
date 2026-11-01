@@ -138,6 +138,21 @@ class VoiceAssistant:
                      self.client.model, len(self.messages))
             reply = self.client.chat(self.messages)
             log.info("llm: reply=%r", reply)
+            # Workspace-model discipline drifts on knowledge-tool turns
+            # (RAG chunks drown the system prompt) — enforce a word budget.
+            max_words = self.cfg.get("server", {}).get("max_reply_words", 0)
+            if max_words and len(reply.split()) > max_words:
+                try:
+                    short = (self.stt.compress_reply(reply) if self.stt is not None
+                             else self.client.chat([
+                                 {"role": "user", "content":
+                                  "Rewrite this for a voice assistant: at most 2 short "
+                                  "sentences, no markdown. Answer:\n" + reply}]))
+                    log.info("llm: reply %d words over budget %d — compressed to %d words",
+                             len(reply.split()), max_words, len(short.split()))
+                    reply = short
+                except Exception:
+                    log.exception("reply compression failed — using the full reply")
             self.messages.append({"role": "assistant", "content": reply})
             limit = 2 * self.max_turns
             if self.send_system and len(self.messages) > limit + 1:
