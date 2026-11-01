@@ -10,7 +10,10 @@ def _client(state_path, **cfg):
     base = {"base_url": "http://owui.test", "api_key": "k", "model": "jarvis",
             "chat_state_file": str(state_path)}
     base.update(cfg)
-    return OpenWebUIClient(base)def _handler(captured, state):
+    return OpenWebUIClient(base)
+
+
+def _handler(captured, state):
     def handler(request):
         path = request.url.path
         if path == "/api/v1/chats/new":
