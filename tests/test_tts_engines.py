@@ -131,7 +131,31 @@ def test_openai_tts_odd_byte_chunks_survive():
     eng = OpenAITTS({"base_url": "http://tts.test/v1"}, convert_fn=lambda p, r, c: p)
     eng.client = httpx.Client(base_url="http://tts.test/v1",
                               transport=httpx.MockTransport(handler))
-    out = b"".join(list(eng.chunks("hello")))
+    out = b"".join(list(eng.chunks("one sentence.")))
     assert out == pcm
-    for chunk in eng.chunks("hello"):
+    for chunk in eng.chunks("one sentence."):
         assert len(chunk) % 2 == 0
+
+
+def test_openai_tts_sentences_pipelined():
+    """A multi-sentence reply is synthesized one sentence per request."""
+    pcm = bytes(range(12))
+    header = b"RIFF\xff\xff\xff\xffWAVEfmt " + b"\x00" * 24 + b"data\xff\xff\xff\xff"
+    requests = []
+
+    def handler(request):
+        body = httpx.Response(200)  # placeholder; read via request.read()
+        import json as _json
+        payload = _json.loads(request.read())
+        requests.append(payload["input"])
+        return httpx.Response(200, content=header + pcm)
+
+    eng = OpenAITTS({"base_url": "http://tts.test/v1"}, convert_fn=lambda p, r, c: p)
+    eng.client = httpx.Client(base_url="http://tts.test/v1",
+                              transport=httpx.MockTransport(handler))
+    out = b"".join(list(eng.chunks("First sentence. Second one! Third?")))
+    assert len(requests) == 3                     # one POST per sentence
+    assert requests[0] == "First sentence."
+    assert requests[1] == "Second one!"
+    assert requests[2] == "Third?"
+    assert out == pcm * 3

@@ -7,10 +7,18 @@ the player through a queue; stop() makes the feeder abandon the rest
 (barge-in). No subprocess, no idle-gap heuristics.
 """
 import logging
+import re
 import queue
 import threading
 
 log = logging.getLogger(__name__)
+
+_SENTENCE_RE = __import__("re").compile(r"(?<=[.!?])\s+")
+
+
+def split_sentences(text: str) -> list:
+    """Split a reply into sentences (TTS engines stream at this granularity)."""
+    return [s.strip() for s in _SENTENCE_RE.split(text) if s.strip()]
 
 
 class PiperEngine:

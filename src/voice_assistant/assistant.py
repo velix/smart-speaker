@@ -39,6 +39,7 @@ def clean_for_tts(text: str) -> str:
     text = _EMOTICON.sub(" ", text)
     text = _EMOJI.sub("", text)
     text = _CITATION.sub("", text)             # [1], [2, 3] — never spoken
+    text = re.sub(r"(?:^|\s)-\s", " ", text)    # markdown list bullets
     return re.sub(r"\s+", " ", text).strip()
 
 
@@ -163,6 +164,8 @@ class VoiceAssistant:
                 self._stop_playback.set()
                 if self.tts_piper:
                     self.tts_piper.stop()   # kill resident synthesis mid-stream
+                if self.tts_openai:
+                    self.tts_openai.stop()  # abandon the in-flight sentence stream
             time.sleep(0.05)
         log.info("playback: done — turn %d complete", self._turn_count)
         self.leds.off()

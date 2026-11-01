@@ -30,6 +30,13 @@ def test_normal_text_untouched():
         "Hi there! I can help with info, reminders, or questions."
 
 
+def test_markdown_list_bullets_removed():
+    assert clean_for_tts("Here is the plan: - first item. - second item.") == \
+        "Here is the plan: first item. second item."
+    assert clean_for_tts("- leading bullet.") == "leading bullet."
+    assert clean_for_tts("real-time audio") == "real-time audio"  # hyphens survive
+
+
 def test_citation_markers_removed():
     assert clean_for_tts("RTX 4070 with 12 GB VRAM [1]. Boot note [2].") == \
         "RTX 4070 with 12 GB VRAM. Boot note."
