@@ -5,6 +5,10 @@ openwebui:
   base_url: ""
   api_key: ""
   model: "jarvis"      # OpenWebUI workspace model — owns prompt/personality (ministral-8b-2512 base)
+  server_chat: true    # Path A chat (chat_id+id+stream+session_id): the ONLY mode where
+                       # OpenWebUI executes tools server-side — without it, workspace-model
+                       # knowledge silently never triggers (docs: Server-Side Tool Calling)
+  server_chat_timeout: 90   # seconds to wait for the server-side tool loop
   language: "en"
 
 audio:
