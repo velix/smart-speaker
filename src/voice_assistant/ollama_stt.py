@@ -51,10 +51,16 @@ class OllamaSTT:
 
     def compress_reply(self, reply: str) -> str:
         """Compress an over-long LLM reply for speech. Reuses the (warm)
-        STT model — a general chat model that happens to be in VRAM."""
-        r = self.client.post("/chat/completions", json={
+        STT model — a general chat model that happens to be in VRAM.
+        Uses Ollama's NATIVE /api/chat: the OpenAI-compatible endpoint
+        ignores `think: false`, and gemma4 otherwise randomly spends
+        200-600 thinking tokens (2-7 s) on this rewrite task."""
+        api_root = self.base.removesuffix("/v1")   # native API is NOT under /v1
+        r = self.client.post(api_root + "/api/chat", json={
             "model": self.model,
+            "think": False,
             "keep_alive": self.keep_alive,
+            "stream": False,
             "messages": [{
                 "role": "user",
                 "content": ("Rewrite this answer for a voice assistant. At most 2 "
@@ -64,4 +70,4 @@ class OllamaSTT:
         })
         if r.status_code != 200:
             raise RuntimeError(f"ollama compress {r.status_code}: {r.text[:200]}")
-        return r.json()["choices"][0]["message"]["content"].strip()
+        return r.json()["message"]["content"].strip()

@@ -64,16 +64,20 @@ def test_compress_reply_payload():
     class FakeResponse:
         status_code = 200
         def json(self):
-            return {"choices": [{"message": {"content": "Fitlen is your Fitlet2 mini-PC."}}]}
+            return {"message": {"content": "Fitlen is your Fitlet2 mini-PC."}}
 
     captured = {}
     def fake_post(path, json=None):
+        captured["path"] = path
         captured["payload"] = json
         return FakeResponse()
 
     stt.client = type("C", (), {"post": staticmethod(fake_post)})()
     out = stt.compress_reply("very long reply " * 50)
     assert out == "Fitlen is your Fitlet2 mini-PC."
+    assert captured["path"].endswith("/api/chat")   # native endpoint (not /v1/...): honors think:false
+    assert captured["path"].startswith("http://gpu:11434")
+    assert captured["payload"]["think"] is False
     assert captured["payload"]["model"] == "gemma4:e4b"
     assert "voice assistant" in captured["payload"]["messages"][0]["content"]
 
