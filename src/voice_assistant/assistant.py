@@ -48,6 +48,7 @@ class VoiceAssistant:
         self.recorder = UtteranceRecorder(self.audio, cfg["vad"])
         self.wake = WakeWordDetector(cfg["wake_word"], self.audio, cfg["button"])
         self.client = OpenWebUIClient(cfg["openwebui"]) if full_pipeline else None
+        self.stt = self._make_stt(cfg) if full_pipeline else None
         self.system_prompt = cfg["server"]["system_prompt"]
         self.max_turns = cfg["history"]["max_turns"]
         self.messages = [{"role": "system", "content": self.system_prompt}]
@@ -61,6 +62,26 @@ class VoiceAssistant:
             self.tts_engine = PiperEngine(
                 cfg["tts"]["piper"],
                 lambda pcm, rate, ch: AudioIO._convert_pcm(pcm, rate, ch, self.audio.rate))
+
+    # ---------- STT ----------
+
+    @staticmethod
+    def _make_stt(cfg: dict):
+        """Returns None for the default openwebui path (client.transcribe),
+        or a dedicated STT client when stt.engine is set to one."""
+        stt_cfg = cfg.get("stt", {})
+        engine = stt_cfg.get("engine", "openwebui")
+        if engine == "ollama":
+            from .ollama_stt import OllamaSTT
+            return OllamaSTT(stt_cfg.get("ollama", {}))
+        if engine != "openwebui":
+            raise ValueError(f"unknown stt.engine: {engine}")
+        return None
+
+    def _transcribe(self, wav: bytes) -> str:
+        if self.stt is not None:
+            return self.stt.transcribe(wav)
+        return self.client.transcribe(wav)
 
     # ---------- one conversation turn ----------
 
@@ -91,8 +112,9 @@ class VoiceAssistant:
 
         self.leds.think()
         try:
-            log.info("stt: transcribing %d-byte utterance via OpenWebUI", len(wav))
-            text = self.client.transcribe(wav)
+            log.info("stt: transcribing %d-byte utterance via %s", len(wav),
+                     self.cfg.get("stt", {}).get("engine", "openwebui"))
+            text = self._transcribe(wav)
             log.info("stt: transcript=%r", text)
             if not text:
                 log.info("stt: empty transcript — turn ended")
@@ -200,6 +222,7 @@ class VoiceAssistant:
                 "button": self.wake._button is not None,
             },
             "tts_engine": self.cfg.get("tts", {}).get("engine", "openwebui"),
+            "stt_engine": self.cfg.get("stt", {}).get("engine", "openwebui"),
             "turns": self._turn_count,
         }
         return ok, payload

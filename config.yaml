@@ -19,6 +19,13 @@ wake_word:
   model: "hey_jarvis"
   threshold: 0.9
 
+stt:
+  engine: "openwebui"    # A/B switch: "openwebui" (whisper on app_server) | "ollama" (voxtral on gpu-machine)
+  ollama:
+    base_url: "http://192.168.2.139:11434/v1"
+    model: "voxtral-mini"
+    # prompt: "Transcribe this audio. Reply with only the transcript."
+
 vad:
   silence_ms: 600
   max_utterance_s: 12

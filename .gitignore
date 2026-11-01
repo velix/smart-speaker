@@ -12,6 +12,7 @@ build/
 /tmp/
 *.wav
 *.mp3
+stt-corpus/
 
 # macOS
 .DS_Store
