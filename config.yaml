@@ -13,6 +13,15 @@ openwebui:
   # can trigger shell commands on the terminal server's machine. Opt-in:
   # set to the terminal id from OpenWebUI (Workspace → Terminals) to enable.
   # terminal_id: "3e4c0103-2a9f-4a50-a373-d66828b9ceb2"
+  # Workspace tools / MCP servers offered on voice turns. The chat UI sends
+  # the model's attached tool ids automatically; raw API callers must send
+  # them or the tools are never offered to the model (docs: Server-Side Tool
+  # Calling, the `tool_ids` request field).
+  #   auto (default) — mirror the UI: use the model's attached toolIds
+  #   ["id", ...]    — explicit list (ids from GET /api/v1/tools/; MCP servers
+  #                    as "server:mcp:<server-id>")
+  #   []             — send none
+  tool_ids: auto
   language: "en"
 
 audio:

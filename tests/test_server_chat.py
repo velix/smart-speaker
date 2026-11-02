@@ -90,6 +90,48 @@ def test_terminal_id_opt_in(tmp_path):
     assert "terminal_id" not in captured2["completion"]
 
 
+def _model_meta_handler(captured, state, meta):
+    inner = _handler(captured, state)
+    def handler(request):
+        if request.url.path == "/api/v1/models/model":
+            return httpx.Response(200, json={"id": "jarvis", "meta": meta})
+        return inner(request)
+    return handler
+
+
+def test_tool_ids_auto_mirrors_model_attachment(tmp_path):
+    """Default (tool_ids: auto): the model's attached toolIds (meta) are sent as
+    tool_ids — the browser chat sends them automatically, raw API callers must
+    include them or the model never sees the tool on voice turns (docs:
+    Server-Side Tool Calling)."""
+    captured, state = {}, {}
+    c = _client(tmp_path / "c1.json")          # no tool_ids key → "auto"
+    c.client = httpx.Client(base_url=c.base, transport=httpx.MockTransport(
+        _model_meta_handler(captured, state, {"toolIds": ["print_message", "print_task"]})))
+    c.chat([{"role": "user", "content": "print this"}])
+    assert captured["completion"]["tool_ids"] == ["print_message", "print_task"]
+    c.chat([{"role": "user", "content": "again"}])   # cached, still sent
+    assert captured["completion"]["tool_ids"] == ["print_message", "print_task"]
+
+
+def test_tool_ids_explicit_list_overrides_auto(tmp_path):
+    captured, state = {}, {}
+    c = _client(tmp_path / "c1.json", tool_ids=["server:mcp:nas"])
+    c.client = httpx.Client(base_url=c.base, transport=httpx.MockTransport(
+        _model_meta_handler(captured, state, {"toolIds": ["print_message"]})))
+    c.chat([{"role": "user", "content": "hi"}])
+    assert captured["completion"]["tool_ids"] == ["server:mcp:nas"]
+
+
+def test_tool_ids_empty_list_sends_none(tmp_path):
+    captured, state = {}, {}
+    c = _client(tmp_path / "c1.json", tool_ids=[])
+    c.client = httpx.Client(base_url=c.base, transport=httpx.MockTransport(
+        _model_meta_handler(captured, state, {"toolIds": ["print_message"]})))
+    c.chat([{"role": "user", "content": "hi"}])
+    assert "tool_ids" not in captured["completion"]
+
+
 def test_server_chat_failure_falls_back_to_plain_completion(tmp_path):
     c = _client(tmp_path / "chat.json")
     captured = {}

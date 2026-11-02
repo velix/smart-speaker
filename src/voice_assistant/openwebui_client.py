@@ -31,6 +31,13 @@ class OpenWebUIClient:
         # model's UI-configured terminal is NOT applied to API requests
         # (docs: Server-Side Tool Calling). Empty = no terminal tools.
         self.terminal_id = cfg.get("terminal_id", "") or None
+        # Workspace tools / MCP servers: the browser UI sends the model's
+        # attached tool ids in the request; raw API callers must send
+        # `tool_ids` explicitly or the tools are never offered to the model
+        # (docs: Server-Side Tool Calling). "auto" mirrors the UI by reading
+        # meta.toolIds off the model; a list overrides; [] sends none.
+        self.tool_ids_cfg = cfg.get("tool_ids", "auto")
+        self._tool_ids = None          # resolved cache for "auto"
         # One persistent chat (kept in the OpenWebUI sidebar for reference);
         # the id survives daemon restarts via this state file.
         self._state_file = cfg.get("chat_state_file", ".speaker-chat.json")
@@ -56,6 +63,25 @@ class OpenWebUIClient:
             self.client.get("/api/models")
         except Exception as e:
             log.debug("warm-up failed (ok): %s", e)
+
+    def _resolve_tool_ids(self) -> list:
+        """tool_ids for the Path A payload: "auto" (default) = the model's
+        attached tools (meta.toolIds — what the chat UI sends automatically);
+        an explicit list overrides; [] sends none. Resolved once, cached."""
+        if self.tool_ids_cfg != "auto":
+            return list(self.tool_ids_cfg or [])
+        if self._tool_ids is None:
+            try:
+                r = self.client.get("/api/v1/models/model", params={"id": self.model})
+                r.raise_for_status()
+                self._tool_ids = list(r.json().get("meta", {}).get("toolIds") or [])
+                log.info("model %s has %d attached tool id(s): %s",
+                         self.model, len(self._tool_ids), self._tool_ids)
+            except Exception:
+                log.exception("could not read meta.toolIds of model %s — sending no tool_ids",
+                              self.model)
+                self._tool_ids = []
+        return self._tool_ids
 
     def transcribe(self, wav_bytes: bytes) -> str:
         files = {"file": ("utterance.wav", wav_bytes, "audio/wav")}
@@ -94,6 +120,7 @@ class OpenWebUIClient:
         chat_id, tail_id = self._ensure_chat(user_msg, assistant_id, ts)
         if tail_id:
             user_msg["parentId"] = tail_id     # keep the tree linear
+        tool_ids = self._resolve_tool_ids()
         payload = {
             "model": self.model,
             "messages": messages,
@@ -103,6 +130,7 @@ class OpenWebUIClient:
             "user_message": user_msg,
             "session_id": self._session_id,     # THE built-in-tools switch
             **({"terminal_id": self.terminal_id} if self.terminal_id else {}),
+            **({"tool_ids": tool_ids} if tool_ids else {}),
             "background_tasks": {"title_generation": False, "tags_generation": False,
                                  "follow_up_generation": False},
             "features": {"code_interpreter": False, "web_search": False,

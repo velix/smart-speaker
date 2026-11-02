@@ -118,6 +118,14 @@ OpenTerminal is supported but **opt-in** (`openwebui.terminal_id` in
 config.yaml): API callers must send `terminal_id` explicitly. Leave it unset
 unless you accept voice-triggered shell execution.
 
+Workspace tools / MCP servers attached to the model are **not** applied to API
+requests automatically — the browser UI sends the model's attached tool ids in
+the request, raw API calls must include `tool_ids` themselves. The client
+defaults to `openwebui.tool_ids: auto`, which mirrors the UI by reading the
+model's `meta.toolIds` (`GET /api/v1/models/model?id=...`); set an explicit
+list (ids from `GET /api/v1/tools/`, MCP servers as `server:mcp:<id>`) to
+override, or `[]` to send none.
+
 ## TTS
 
 Selected by `tts.engine` in config.yaml:
