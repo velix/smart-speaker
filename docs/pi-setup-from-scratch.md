@@ -2,17 +2,17 @@
 
 Complete, reproducible build for a **fresh 64-bit Raspberry Pi OS (trixie,
 Lite)** on the Raspberry Pi 3 Model B + ReSpeaker 2-Mic HAT (KS0314).
-Everything below is the *validated minimal path* — no seeed-voicecard repo,
-no dkms, no patches needed. (How we learned this is in
-`docs/migration-64bit-checklist.md`; the seeed overlay's old-style phandles
-break on 2026 firmware, but the kernel-bundled `wm8960-soundcard` overlay
-works out of the box.)
+Everything below is the *validated minimal path*. No seeed-voicecard repo, no
+dkms, and no patches are needed. (How this was learned is recorded in
+`docs/migration-64bit-checklist.md`. The seeed overlay's old-style phandles
+break on 2026 firmware. The kernel-bundled `wm8960-soundcard` overlay works
+out of the box.)
 
 ## 1. Flash [manual]
 
 - Raspberry Pi Imager → **Raspberry Pi OS Lite (64-bit)**.
 - Imager settings (gear): hostname `rpi-mic`, user `<user>` + password,
-  SSH enabled with public-key auth (add `~/.ssh/pi-smart-speaker.pub`),
+  SSH enabled with public-key auth (`~/.ssh/pi-smart-speaker.pub` is added),
   Wi-Fi if used.
 
 ## 2. First login, sudo, apt [ssh from the Mac]
@@ -24,8 +24,8 @@ ssh -t <user>@pi-speaker.local 'echo "<user> ALL=(ALL) NOPASSWD: ALL" | \
     sudo chmod 440 /etc/sudoers.d/010-<user>-nopasswd'
 ```
 
-(The Mac's `~/.ssh/config` should have the `pi-speaker` Host alias; see
-the repo history for its exact shape.)
+(The Mac's `~/.ssh/config` should have the `pi-speaker` Host alias. See the
+repo history for its exact shape.)
 
 ```bash
 ssh pi-speaker
@@ -36,14 +36,14 @@ curl -LsSf https://astral.sh/uv/install.sh | sh     # uv, managed Python 3.11
 
 ## 3. Device tree overlay + SPI [the critical step]
 
-Append to `/boot/firmware/config.txt`:
+The following is appended to `/boot/firmware/config.txt`:
 
 ```
 dtoverlay=wm8960-soundcard
 dtparam=spi=on
 ```
 
-Then reboot. Verify:
+The Pi is then rebooted. Verification:
 
 ```bash
 ls /dev/spidev0.1        # LEDs (APA102) — must exist
@@ -54,8 +54,8 @@ arecord -D plughw:1,0 -f S16_LE -r 16000 -c 2 -d 2 /tmp/cap.wav && \
     aplay -D plughw:1,0 /tmp/cap.wav    # loopback must work
 ```
 
-Do NOT install the seeed-voicecard service/overlay (respeaker/seeed-voicecard
-or the Keyestudio zip): its runtime overlay application and old-style DTBO
+The seeed-voicecard service/overlay is NOT installed (respeaker/seeed-voicecard
+or the Keyestudio zip). Its runtime overlay application and old-style DTBO
 phandles break the wm8960 clocks on 2026 firmware ("No MCLK configured").
 
 ## 4. Mixer (wm8960 via the generic overlay)
@@ -78,17 +78,16 @@ amixer -c 1 cset name="Right Input Boost Mixer RINPUT1 Volume" 3
 sudo rm -f /var/lib/alsa/asound.state && sudo alsactl store   # persist across reboots
 ```
 
-Verify by speaking 6 s at the HAT and checking levels (expect peak
->10000 with speech; rms ~2800; if peak ~300 and rms ~25 the input gate is
-still closed):
+Levels are verified by speaking 6 s at the HAT. Expected with speech: peak
+>10000, rms ~2800. If peak ~300 and rms ~25, the input gate is still closed:
 
 ```bash
 arecord -D plughw:1,0 -f S16_LE -r 16000 -c 2 -d 3 /tmp/level.wav
 ```
 
 **Mic input routing:** the generic overlay routes LINPUT1/RINPUT1 as "Mic
-Jack". If capture is digital silence (rms < ~100 with the fan on), enable the
-codec's input boost mixer paths (see troubleshooting).
+Jack". If capture is digital silence (rms < ~100 with the fan on), the boost
+mixer paths on the codec inputs are enabled (see troubleshooting).
 
 ## 5. Deploy the project
 
@@ -114,8 +113,8 @@ sudo journalctl -u voice-assistant -f      # expect: wake word active, GPIO17
 curl -s http://127.0.0.1:8310/health       # {"status": "ok", ...}
 ```
 
-Updates from the Mac: push to GitHub, then `./scripts/pi-update.sh` on the Pi
-(pulls, uv sync, restarts the service).
+Updates from the Mac: a push to GitHub is made, then `./scripts/pi-update.sh`
+is run on the Pi (pulls, uv sync, restarts the service).
 
 ## 7. Monitors
 
@@ -125,16 +124,16 @@ uptime-kuma: HTTP(s) monitor → `http://pi-speaker.local:8310/health`
 ## Troubleshooting (all hit during the 2026-10-26 migration)
 
 - **"No MCLK configured" / capture EINVAL**: wrong overlay (seeed's) or the
-  seeed-voicecard.service re-applying overlays at runtime. Fix: use
-  `dtoverlay=wm8960-soundcard`, disable that service.
-- **LEDs dead (`/dev/spidev0.1` missing)**: SPI disabled — add
-  `dtparam=spi=on`.
+  seeed-voicecard.service re-applying overlays at runtime. Fix:
+  `dtoverlay=wm8960-soundcard` is used. That service is disabled.
+- **LEDs dead (`/dev/spidev0.1` missing)**: SPI is disabled.
+  `dtparam=spi=on` is added.
 - **gpiozero "Failed to add edge detection"**: RPi.GPIO is broken on
-  64-bit/new kernels — the project depends on `lgpio` (>=0.2.2) which
-  gpiozero prefers automatically.
-- **openwakeword tflite crash on aarch64**: use
-  `inference_framework="onnx"` (already in wake_word.py).
-- **plain `uv sync` drops openwakeword**: it's a default dep only via the
-  `linux + aarch64` marker — do not remove that marker.
-- **pkill/pgrep over SSH**: see AGENTS.md — patterns match the SSH session's
-  own command line; use systemctl or exact-name matches.
+  64-bit/new kernels. The project depends on `lgpio` (>=0.2.2), which gpiozero
+  prefers automatically.
+- **openwakeword tflite crash on aarch64**: `inference_framework="onnx"` is
+  used (already in wake_word.py).
+- **plain `uv sync` drops openwakeword**: it is a default dep only via the
+  `linux + aarch64` marker. That marker must not be removed.
+- **pkill/pgrep over SSH**: see AGENTS.md. Patterns match the SSH session's
+  own command line. systemctl or exact-name matches are used.

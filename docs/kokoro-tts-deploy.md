@@ -1,11 +1,11 @@
 # Kokoro-FastAPI deployment — gpu-machine (TTS engine, deployed)
 
 Kokoro-FastAPI (remsky/Kokoro-FastAPI) is the GPU TTS server: a
-single-purpose container, OpenAI-compatible `/v1/audio/speech`, streaming
-responses, actively maintained. It replaced the earlier Ollama/Phonon idea
-(Phonon is macOS/MLX-only as of Ollama 0.40.12 — verified at the API level)
-and won the A/B against local piper (better voice, first audio ~160 ms vs
-~1.7 s — measurements in KNOWLEDGE.md, 2026-11-01).
+single-purpose container with an OpenAI-compatible `/v1/audio/speech`
+endpoint and streaming responses. It is actively maintained. It replaced the
+earlier Ollama/Phonon idea (Phonon is macOS/MLX-only as of Ollama 0.40.12 —
+verified at the API level). It won the A/B against local piper (better voice,
+first audio ~160 ms vs ~1.7 s — measurements in KNOWLEDGE.md, 2026-11-01).
 
 **Status: deployed and in production** as a compose stack on gpu-machine
 (gpu-machine.local:8880), selected by `tts.engine: "openai"` in config.yaml
@@ -42,28 +42,28 @@ curl -s http://localhost:8880/v1/audio/speech \
   --output /tmp/test.wav
 ```
 
-Verify the model loaded on CUDA: `docker compose logs kokoro-tts | grep -i
-"Initializing Kokoro"` — expect "on cuda". If it says cpu, see the gotcha
-below.
+The model load on CUDA is verified with: `docker compose logs kokoro-tts | grep -i
+"Initializing Kokoro"` — "on cuda" is expected. If cpu is reported, see the
+gotcha below.
 
 ## Gotchas found during deployment (2026-11-01)
 
 - **`NVIDIA_VISIBLE_DEVICES=all` alone does NOT give the container a GPU.**
-  Without `runtime: nvidia` (or a `deploy.resources.devices` equivalent),
-  the container starts fine but synthesizes on CPU — slower, and the GPU
+  Without `runtime: nvidia` (or a `deploy.resources.devices` equivalent), the
+  container starts fine but synthesizes on CPU. That is slower, and the GPU
   sits idle. `nvidia-smi` inside a plain `cuda` test container can work while
-  the compose stack still lacks `runtime: nvidia`; check the logs, not just
-  the host.
+  the compose stack still lacks `runtime: nvidia`. The logs are checked, not
+  just the host.
 - **The endpoint synthesizes the whole request before streaming the body.**
-  Long replies would block first audio for the full synthesis time — the
+  Long replies would block first audio for the full synthesis time. The
   speaker client pipelines sentence by sentence instead (see
   `src/voice_assistant/openai_tts.py`).
 - The WAV response streams in network chunks that split at arbitrary byte
-  boundaries; the client carries odd bytes between reads (whole int16
-  samples only) and skips the RIFF header by sentinel (`data` chunk).
+  boundaries. The client carries odd bytes between reads (whole int16 samples
+  only). The RIFF header is skipped by sentinel (`data` chunk).
 - Voices: `af_heart` (in use), `af_bella`, `af_sarah`, `am_adam`,
-  `bm_george`, ... — full list via `/v1/audio/voices`.
-- LAN-only: no auth by default; do not port-forward it.
+  `bm_george`, ... The full list is at `/v1/audio/voices`.
+- LAN-only: no auth by default. It must not be port-forwarded.
 
 ## Client side (the Pi)
 
