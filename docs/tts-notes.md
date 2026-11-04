@@ -6,7 +6,7 @@ Voxtral would need if we ever want it, and how the current engine stack
 
 ## What we found empirically
 
-OpenWebUI 0.11.0 at `http://192.168.2.210:3020`:
+OpenWebUI 0.11.0 at `http://openwebui-host.local:3020`:
 
 - STT: **works** (`POST /api/v1/audio/transcriptions`, Whisper local, model `base`).
 - Chat: **works** (`POST /api/chat/completions`, e.g. `ministral-3b-2512`).

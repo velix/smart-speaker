@@ -165,7 +165,7 @@ Example response:
 }
 ```
 
-In uptime-kuma add an **HTTP(s)** monitor for `http://192.168.2.145:8310/health`.
+In uptime-kuma add an **HTTP(s)** monitor for `http://pi-speaker.local:8310/health`.
 Note: "output_speaker" reflects the playback stream state on the HAT's jack —
 the WM8960 does not expose physical plug detection, so a disconnected cable
 downstream of the jack cannot be detected.

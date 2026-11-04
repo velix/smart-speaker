@@ -10,7 +10,7 @@ Goal: move the smart speaker from Raspbian 11 **bullseye 32-bit (armv7)** to
 maintained piper wheels. The Pi is wiped during this migration — SSH access,
 secrets, and all Pi-local state are rebuilt from scratch.
 
-Legend: **[velix]** = you do it · **[agent]** = the agent can drive it over
+Legend: **[<user>]** = you do it · **[agent]** = the agent can drive it over
 SSH · **[gate]** = stop if this fails.
 
 ## 0. Pre-flight (done BEFORE wiping the old system)
@@ -19,33 +19,33 @@ SSH · **[gate]** = stop if this fails.
       `~/projects/smart-speaker-backup/config.local.yaml` (Mac, outside repo).
 - [x] `scripts/setup-pi-tts.sh` now picks the piper tarball by `uname -m`
       (armv7l **and** aarch64).
-- [x] `voice-assistant.service` fixed: `User=velix` (was `pi`).
+- [x] `voice-assistant.service` fixed: `User=<user>` (was `pi`).
 - [ ] Optional: note anything else on the Pi worth keeping — once wiped, it's
       gone. (`~/seeed-voicecard-6.1`, `~/mic_hat-master` are re-downloadable;
       `/tmp` recordings are disposable.)
 
-## 1. Flash [velix]
+## 1. Flash [<user>]
 
 - [ ] Flash **Raspberry Pi OS **Lite** (64-bit)** to the SD card with
       Raspberry Pi Imager (Pi 3B is 64-bit capable).
 - [ ] In the Imager's settings (gear icon), configure:
       - hostname: `rpi-mic`
-      - username: `velix` + your password (same as before)
+      - username: `<user>` + your password (same as before)
       - enable SSH, **allow public-key auth**, and add the existing key:
         `~/.ssh/pi-smart-speaker.pub` (cat it on the Mac to copy the line)
       - Wi-Fi credentials if you use Wi-Fi (the Pi currently uses it)
 - [ ] Boot the Pi and give it ~2 min for first-boot setup.
 
-## 2. Reconnect from the Mac [velix or agent]
+## 2. Reconnect from the Mac [<user> or agent]
 
 - [ ] Find the new IP (router/clients page, or `ping rpi-mic.local`).
-      It may differ from `192.168.2.145` — if so:
+      It may differ from `pi-speaker.local` — if so:
       - update `HostName` in `~/.ssh/config` under `Host pi-speaker`
       - update the uptime-kuma monitor URL (`http://<new-ip>:8310/health`)
 - [ ] Clear the old SSH host key (the reimaged Pi has a new one):
 
       ```bash
-      ssh-keygen -R 192.168.2.145   # and/or the new IP if it was used before
+      ssh-keygen -R pi-speaker.local   # and/or the new IP if it was used before
       ssh pi-speaker 'uname -m && uname -r'
       ```
 
@@ -84,7 +84,7 @@ configured" — wm8960 node loses its `clocks` property). The working solution:
 
 ## 5. Deploy the project [agent]
 
-- [ ] `sudo mkdir -p /opt/voice-assistant && sudo chown velix:velix /opt/voice-assistant`
+- [ ] `sudo mkdir -p /opt/voice-assistant && sudo chown <user>:<user> /opt/voice-assistant`
 - [ ] `git clone https://github.com/velix/smart-speaker.git /opt/voice-assistant`
 - [ ] Restore secrets:
       `scp ~/projects/smart-speaker-backup/config.local.yaml pi-speaker:/opt/voice-assistant/`
@@ -95,7 +95,7 @@ configured" — wm8960 node loses its `clocks` property). The working solution:
       voice, writes `/tmp/piper-test.wav`
 - [ ] Play it: `aplay -D plughw:2,0 /tmp/piper-test.wav`
 
-## 6. Verification — repeat the phases [velix + agent]
+## 6. Verification — repeat the phases [<user> + agent]
 
 - [ ] **Phase 1 (audio)**: 6 s record + playback loopback through the
       speaker — you should hear your voice:

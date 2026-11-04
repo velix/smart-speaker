@@ -8,10 +8,10 @@ and won the A/B against local piper (better voice, first audio ~160 ms vs
 ~1.7 s — measurements in KNOWLEDGE.md, 2026-11-01).
 
 **Status: deployed and in production** as a compose stack on gpu-machine
-(192.168.2.139:8880), selected by `tts.engine: "openai"` in config.yaml
+(gpu-machine.local:8880), selected by `tts.engine: "openai"` in config.yaml
 (piper is the automatic fallback).
 
-## Deploy on gpu-machine (192.168.2.139)
+## Deploy on gpu-machine (gpu-machine.local)
 
 `/mnt/cifs/appdata/stacks/kokoro/compose.yml` (actual working config):
 
@@ -74,7 +74,7 @@ tts:
   engine: "openai"
   fallback: "piper"        # automatic fallback if the GPU server is down
   openai:
-    base_url: "http://192.168.2.139:8880/v1"
+    base_url: "http://gpu-machine.local:8880/v1"
     model: "kokoro"
     voice: "af_heart"
     sample_rate: 24000

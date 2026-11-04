@@ -11,17 +11,17 @@ works out of the box.)
 ## 1. Flash [manual]
 
 - Raspberry Pi Imager → **Raspberry Pi OS Lite (64-bit)**.
-- Imager settings (gear): hostname `rpi-mic`, user `velix` + password,
+- Imager settings (gear): hostname `rpi-mic`, user `<user>` + password,
   SSH enabled with public-key auth (add `~/.ssh/pi-smart-speaker.pub`),
   Wi-Fi if used.
 
 ## 2. First login, sudo, apt [ssh from the Mac]
 
 ```bash
-ssh-keygen -R 192.168.2.145   # only if this IP was used before (host key changes)
-ssh -t velix@192.168.2.145 'echo "velix ALL=(ALL) NOPASSWD: ALL" | \
-    sudo tee /etc/sudoers.d/010-velix-nopasswd > /dev/null && \
-    sudo chmod 440 /etc/sudoers.d/010-velix-nopasswd'
+ssh-keygen -R pi-speaker.local   # only if this IP was used before (host key changes)
+ssh -t <user>@pi-speaker.local 'echo "<user> ALL=(ALL) NOPASSWD: ALL" | \
+    sudo tee /etc/sudoers.d/010-<user>-nopasswd > /dev/null && \
+    sudo chmod 440 /etc/sudoers.d/010-<user>-nopasswd'
 ```
 
 (The Mac's `~/.ssh/config` should have the `pi-speaker` Host alias; see
@@ -93,7 +93,7 @@ codec's input boost mixer paths (see troubleshooting).
 ## 5. Deploy the project
 
 ```bash
-sudo mkdir -p /opt/voice-assistant && sudo chown velix:velix /opt/voice-assistant
+sudo mkdir -p /opt/voice-assistant && sudo chown <user>:<user> /opt/voice-assistant
 git clone https://github.com/velix/smart-speaker.git /opt/voice-assistant
 cd /opt/voice-assistant
 # secrets (NOT in the repo): create config.local.yaml with openwebui
@@ -119,7 +119,7 @@ Updates from the Mac: push to GitHub, then `./scripts/pi-update.sh` on the Pi
 
 ## 7. Monitors
 
-uptime-kuma: HTTP(s) monitor → `http://192.168.2.145:8310/health`
+uptime-kuma: HTTP(s) monitor → `http://pi-speaker.local:8310/health`
 (200 = capture+playback streams active, 503 = degraded).
 
 ## Troubleshooting (all hit during the 2026-10-26 migration)
