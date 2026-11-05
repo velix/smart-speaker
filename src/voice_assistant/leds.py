@@ -25,6 +25,9 @@ class Leds:
     def wakeup(self):   # triggered: rising warm light
         if self.ok: _pixels.wakeup()
 
+    def listen(self):   # conversation open: follow-ups accepted without wake word
+        if self.ok: _pixels.listen()
+
     def think(self):
         if self.ok: _pixels.think()
 

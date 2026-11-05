@@ -14,18 +14,32 @@ class UtteranceRecorder:
         self.min_speech_ms = cfg["min_speech_ms"]
         self.frame_ms = 30
 
-    def record_utterance(self) -> bytes | None:
-        """Record until silence_ms of silence after speech. Returns WAV bytes or None."""
+    def record_utterance(self, wait_s: float | None = None) -> bytes | None:
+        """Record until silence_ms of silence after speech. Returns WAV bytes or None.
+
+        wait_s caps how long to wait for speech ONSET (None = max_utterance_s,
+        the historical behavior). Once speech starts, max_utterance_s caps the
+        utterance length. Conversation follow-ups pass the remaining gate here.
+        """
+        wait = self.max_s if wait_s is None else wait_s
         frames, speech_started = [], False
         silence_accum = 0
         speech_accum = 0
-        deadline = time.time() + self.max_s
+        start = time.time()
+        speech_start = None
 
-        while time.time() < deadline:
+        while True:
+            now = time.time()
+            if speech_start is None and now - start >= wait:
+                break
+            if speech_start is not None and now - speech_start >= self.max_s:
+                break
             frame = self.audio.read_vad_frame(self.frame_ms)
             is_speech = self.vad.is_speech(frame, self.audio.rate)
 
             if is_speech:
+                if speech_start is None:
+                    speech_start = time.time()
                 speech_started = True
                 speech_accum += self.frame_ms
                 silence_accum = 0

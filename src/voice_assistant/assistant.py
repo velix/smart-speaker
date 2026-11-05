@@ -45,6 +45,14 @@ def clean_for_tts(text: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
+def strip_wake_phrase(text: str, wake_model: str = "hey_jarvis") -> str:
+    """Remove a leading wake-word phrase ("hey jarvis, ...") from a transcript
+    captured during an open conversation — there the wake word is optional, so
+    it must not end up in the LLM context."""
+    phrase = r"\s+".join(re.escape(w) for w in wake_model.replace("_", " ").split())
+    return re.sub(rf"^\s*{phrase}\b[\s,.:!-]*", "", text, flags=re.IGNORECASE).strip()
+
+
 class VoiceAssistant:
     def __init__(self, cfg, full_pipeline=True):
         self.cfg = cfg
@@ -52,7 +60,17 @@ class VoiceAssistant:
         self.audio = AudioIO(cfg["audio"])
         self.leds = Leds()
         self.recorder = UtteranceRecorder(self.audio, cfg["vad"])
-        self.wake = WakeWordDetector(cfg["wake_word"], self.audio, cfg["button"])
+        # conversation mode: follow-up turns without the wake word, speech
+        # barge-in during playback, and a silence gate that closes it
+        conv = cfg.get("conversation") or {}
+        self.conversation_enabled = bool(conv.get("enabled", False))
+        self.followup_gate_s = float(conv.get("followup_gate_s", 120))
+        self.speech_barge_in = bool(conv.get("speech_barge_in", True))
+        self.strip_wake_word = bool(conv.get("strip_wake_word", True))
+        self.conversation_open = False
+        self._last_turn_end = 0.0
+        self._stop_event = None
+        self.wake = WakeWordDetector(cfg["wake_word"], self.audio, cfg["button"], conv)
         self.client = OpenWebUIClient(cfg["openwebui"]) if full_pipeline else None
         self.stt = self._make_stt(cfg) if full_pipeline else None
         self.system_prompt = cfg["server"]["system_prompt"]
@@ -96,37 +114,51 @@ class VoiceAssistant:
 
     # ---------- one conversation turn ----------
 
-    def turn(self, trigger: str = "unknown"):
-        self._turn_count += 1
-        log.info("turn %d started: trigger=%s", self._turn_count, trigger)
-
+    def _capture(self, wait_s=None):
+        """Record one utterance. wait_s bounds the wait for speech ONSET —
+        conversation follow-ups pass the remaining gate here."""
         log.info("capture: listening for speech (VAD, max %.0f s)", self.recorder.max_s)
         self.wake.pause()          # exclusive access to the mic while recording
         try:
-            wav = self.recorder.record_utterance()
+            return self.recorder.record_utterance(wait_s=wait_s)
         finally:
-            self.wake.resume()     # live again for wake-word barge-in during playback
+            self.wake.resume()     # live again for wake-word/barge-in during playback
+
+    def turn(self, trigger: str = "unknown"):
+        self._turn_count += 1
+        log.info("turn %d started: trigger=%s", self._turn_count, trigger)
+        wav = self._capture()
         if wav is None:
             log.info("capture: no speech detected — turn ended")
             self.leds.off()
             return
-        with wave.open(io.BytesIO(wav)) as wf:
-            capture_s = wf.getnframes() / wf.getframerate()
-        log.info("capture: %.1f s utterance captured (%d bytes)",
-                 capture_s, len(wav))
-
         if not self.full:
             out = Path("/tmp/utterance.wav")
             out.write_bytes(wav)
             log.info("capture: saved %s (%d bytes)", out, len(wav))
             self.leds.off()
             return
+        self._process_utterance(wav, trigger)
+
+    def _process_utterance(self, wav: bytes, trigger: str):
+        """STT → LLM → TTS → playback for one captured utterance."""
+        with wave.open(io.BytesIO(wav)) as wf:
+            capture_s = wf.getnframes() / wf.getframerate()
+        log.info("capture: %.1f s utterance captured (%d bytes)",
+                 capture_s, len(wav))
 
         self.leds.think()
         try:
             log.info("stt: transcribing %d-byte utterance via %s", len(wav),
                      self.cfg.get("stt", {}).get("engine", "openwebui"))
             text = self._transcribe(wav)
+            if (self.conversation_open and self.strip_wake_word
+                    and trigger in ("followup", "barge_in")):
+                stripped = strip_wake_phrase(
+                    text, self.cfg["wake_word"].get("model", "hey_jarvis"))
+                if stripped != text:
+                    log.info("stt: wake phrase stripped: %r → %r", text, stripped)
+                text = stripped
             log.info("stt: transcript=%r", text)
             if not text:
                 log.info("stt: empty transcript — turn ended")
@@ -136,7 +168,13 @@ class VoiceAssistant:
             self.messages.append({"role": "user", "content": text})
             log.info("llm: requesting reply from %s (context: %d messages)",
                      self.client.model, len(self.messages))
-            reply = self.client.chat(self.messages)
+            try:
+                reply = self.client.chat(self.messages)
+            except Exception:
+                # backend dropped mid-turn: do not leave a dangling user
+                # message in the history the next turn would build on
+                self.messages.pop()
+                raise
             log.info("llm: reply=%r", reply)
             # Workspace-model discipline drifts on knowledge-tool turns
             # (RAG chunks drown the system prompt) — enforce a word budget.
@@ -167,7 +205,7 @@ class VoiceAssistant:
             self.leds.off()
             return
 
-        # ---- streaming playback with barge-in (wake word/button stops audio) ----
+        # ---- streaming playback with barge-in (wake word/button/speech) ----
         self._stop_playback.clear()
         self.wake.reset()
         self.leds.speak()
@@ -176,6 +214,9 @@ class VoiceAssistant:
             target=self._play_tts, args=(spoken,), daemon=True)
         player.start()
         while player.is_alive():
+            if self._stop_event is not None and self._stop_event.is_set():
+                self._stop_playback.set()
+                break
             if self.wake.detected():
                 log.info("playback: barge-in via %s", self.wake.last_trigger())
                 self._stop_playback.set()
@@ -261,14 +302,57 @@ class VoiceAssistant:
             "tts_engine": self.cfg.get("tts", {}).get("engine", "openwebui"),
             "stt_engine": self.cfg.get("stt", {}).get("engine", "openwebui"),
             "turns": self._turn_count,
+            "conversation": "open" if self.conversation_open else "idle",
         }
         return ok, payload
 
+    # ---------- conversation state machine ----------
+
+    def _conversation_begin(self):
+        if self.conversation_enabled:
+            self.conversation_open = True
+            self.wake.set_barge_in(self.speech_barge_in)
+            log.info("conversation opened (trigger) — follow-ups accepted for %.0f s",
+                     self.followup_gate_s)
+
+    def _conversation_followups(self, stopped=None):
+        """After a turn: keep accepting follow-up speech (no wake word) until
+        the user has been silent for followup_gate_s — then close the
+        conversation and go back to wake-word-only idle."""
+        if not self.conversation_enabled:
+            return
+        stopped = stopped or (lambda: False)
+        self.conversation_open = True
+        self.wake.set_barge_in(self.speech_barge_in)
+        self.leds.listen()
+        while not stopped():
+            remaining = self.followup_gate_s - (time.time() - self._last_turn_end)
+            if remaining <= 0:
+                break
+            if self.wake.detected():
+                # button/barge flag raised during the window — let the main
+                # loop start a fresh turn (and keep the conversation open)
+                return
+            wav = self._capture(wait_s=remaining)
+            if wav is None:
+                break                       # silence for the whole gate
+            self._turn_count += 1
+            log.info("turn %d started: trigger=followup", self._turn_count)
+            self._process_utterance(wav, "followup")
+            self._last_turn_end = time.time()
+        self.conversation_open = False
+        self.wake.set_barge_in(False)
+        self.leds.off()
+        log.info("conversation closed — back to wake word (gate %.0f s)",
+                 self.followup_gate_s)
+
     # ---------- main loop ----------
 
-    def run(self):
-        log.info("assistant up (wake=%s button=%s full=%s)",
-                 self.wake.enabled, self.wake._button is not None, self.full)
+    def run(self, stop_event=None):
+        self._stop_event = stop_event
+        log.info("assistant up (wake=%s button=%s full=%s conversation=%s)",
+                 self.wake.enabled, self.wake._button is not None, self.full,
+                 self.conversation_enabled)
         h = self.cfg.get("health", {})
         if h.get("enabled", False):
             from .health import HealthServer
@@ -277,7 +361,7 @@ class VoiceAssistant:
         if self.tts_piper and self.cfg.get("tts", {}).get("engine") == "piper":
             threading.Thread(target=self.tts_piper.prewarm, daemon=True).start()
         if self.wake.enabled or self.wake._button:
-            while True:
+            while not (stop_event is not None and stop_event.is_set()):
                 if self.wake.detected():
                     trigger = self.wake.last_trigger()
                     self.wake.reset()
@@ -285,7 +369,11 @@ class VoiceAssistant:
                     if self.client:
                         log.info("network: warming OpenWebUI connection")
                         threading.Thread(target=self.client.warm, daemon=True).start()
+                    self._conversation_begin()
                     self.turn(trigger)
+                    self._last_turn_end = time.time()
+                    self._conversation_followups(
+                        stopped=lambda: stop_event is not None and stop_event.is_set())
                 time.sleep(0.02)
         else:
             log.info("no trigger configured — running single turn")

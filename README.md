@@ -148,6 +148,16 @@ Selected by `tts.engine` in config.yaml:
 If the primary engine fails, the daemon falls back to `tts.fallback`
 (default: `piper`). The speaker keeps talking when the GPU box is down.
 
+## Conversational mode
+
+`conversation.enabled` keeps a conversation open after a wake-word or button turn.
+Follow-up speech is accepted without the wake word while the conversation is open.
+A user silence of `conversation.followup_gate_s` seconds (default 120) closes the conversation.
+The wake word is required again once the gate closes.
+While a conversation is open, sustained speech (`conversation.barge_min_speech_ms`) also interrupts playback — barge-in works without the wake word.
+A leading wake word in a follow-up transcript is stripped (`conversation.strip_wake_word`) before the LLM context is built.
+The `/health` payload reports the state as `"conversation": "open"` or `"idle"`.
+
 ## Health endpoint (uptime-kuma)
 
 `GET http://<pi>:8310/health` when `health.enabled` is true. **200** while both
@@ -163,7 +173,8 @@ Example response:
   "trigger": {"wake_word": true, "button": true},
   "tts_engine": "openai",
   "stt_engine": "ollama",
-  "turns": 12
+  "turns": 12,
+  "conversation": "idle"
 }
 ```
 

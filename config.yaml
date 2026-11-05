@@ -56,6 +56,18 @@ vad:
 button:
   enabled: true      # GPIO17 push-to-talk fallback / barge-in
 
+conversation:
+  # Conversational mode: after a wake-word/button turn, keep accepting
+  # follow-up speech WITHOUT the wake word until the user has been silent for
+  # followup_gate_s — then the conversation closes and the wake word is
+  # required again. While a conversation is open, plain speech also barges in
+  # during playback (in addition to wake word / button).
+  enabled: true
+  followup_gate_s: 120      # user silence this long after a turn closes the conversation
+  speech_barge_in: true     # sustained speech interrupts playback while conversing
+  barge_min_speech_ms: 200  # sustained speech this long counts as a barge-in
+  strip_wake_word: true     # drop a leading "hey jarvis" from follow-up transcripts
+
 tts:
   engine: "openai"         # A/B validated 2026-11-01: Kokoro GPU ~0.95s first-audio + clearly better voice; piper = fallback
   fallback: "piper"         # used if the primary engine fails
